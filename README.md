@@ -124,12 +124,12 @@ rollout.update('new_homepage', {
 })
 ```
 
-#### `rollout.mods(flagname, callback)`
+#### `rollout.mods(flagname)`
   - `flagname`: `String` the rollout feature key
-  - `callback`: `function` a callback function that returns the flags, their names, and values
+  - returns `Promise`: resolves with the flags, their names, and values
 
 ``` js
-rollout.mods('new_homepage', function (mods) {
+rollout.mods('new_homepage').then(function (mods) {
   flags.employee == 100
   flags.geo_sf == 50.000
   flags.id == 33.333
