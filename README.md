@@ -141,6 +141,13 @@ rollout.mods('new_homepage', function (mods) {
 rollout.flags() == ['new_homepage', 'other_secret_feature']
 ```
 
+### Tests
+see [tests/index.js](tests/index.js)
+
+``` sh
+make test
+```
+
 ### License MIT
 
 Happy rollout!
