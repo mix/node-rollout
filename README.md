@@ -128,11 +128,12 @@ rollout.update('new_homepage', {
  - `callback`: `function` a callback function that returns the flags, their names, and values
 
  ``` js
- rollout.mods('new_homepage', function (mods) {
-   flags.employee == 100
-   flags.geo_sf == 50.000
-   flags.id == 33.333
- })
+rollout.mods('new_homepage', function (mods) {
+  flags.employee == 100
+  flags.geo_sf == 50.000
+  flags.id == 33.333
+})
+
  ```
 
 #### `rollout.flags()`
