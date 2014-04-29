@@ -38,9 +38,9 @@ require('./configuration')
 app.get('/', new_homepage, old_homepage)
 
 function new_home_page(req, res, next) {
-  rollout.get('new_homepage', current_user.id, {
-    employee: current_user.email,
-    geo: [current_user.lat, current_user.lon]
+  rollout.get('new_homepage', req.current_user.id, {
+    employee: req.current_user.email,
+    geo: [req.current_user.lat, req.current_user.lon]
   })
     .then(function () {
       res.render('home/new-index')
