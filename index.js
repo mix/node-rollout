@@ -44,9 +44,11 @@ Rollout.prototype.handler = function (key, flags) {
 }
 
 Rollout.prototype.get = function (key, id, opt_values) {
-  if (!opt_values) opt_values = {}
   var flags = this._handlers[key]
   var likely = this.val_to_percent(key + id)
+  if (!opt_values) opt_values = {
+    id: id
+  }
   return when.promise(function (resolve, reject) {
     var keys = Object.keys(flags).map(function (k) {
       return key + ':' + k
