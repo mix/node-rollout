@@ -57,18 +57,24 @@ function old_home_page (req, res, next) {
 
 ### API Options
 
-#### `rollout.get(key, uid, values)`
+#### `rollout.get(key, uid, opt_values)`
 
  - `key`: `String` The rollout feature key. Eg "new_homepage"
  - `uid`: `String` The identifier of which will determine likelyhood of falling in rollout. Typically a user id.
- - `values`: `Object` A lookup object with default percentages and conditions
+ - `opt_values`: `Object` *optional* A lookup object with default percentages and conditions. Defaults to `{id: args.uid}`
  - returns `Promise`
 
 ``` js
-rollout.get('button_test', 123, {
-  id: {
-    percentage: 50
-  }
+rollout.get('button_test', 123)
+  .then(function () {
+    render('blue_button')
+  })
+  .otherwise(function () {
+    render('red_button')
+  })
+
+rollout.get('another_feature', 123, {
+  employee: 'user@example.org'
 })
   .then(function () {
     render('blue_button')
@@ -84,6 +90,22 @@ rollout.get('button_test', 123, {
   - `flagname`: `String` The name of the flag. Typically `id`, `employee`, `ip`, or any other arbitrary item you would want to modify the rollout
     - `percentage`: `NumberRange` from 0 - 100. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
     - `condition`: `Function` a white-listing method by which you can add users into a group. See examples.
+
+``` js
+rollout.handler('admin_section', {
+  // 0% of regular users. You may omit `id` since it will default to 0
+  id: {
+    percentage: 0
+  },
+  // All users with the company email
+  employee: {
+    percentage: 100,
+    condition: function (val) {
+      return val.match(/@company-email\.com$/)
+    }
+  }
+})
+```
 
 #### `rollout.update(key, flags)`
  - `key`: `String` The rollout feature key

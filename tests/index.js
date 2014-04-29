@@ -110,6 +110,33 @@ describe('rollout', function () {
       expect(out).to.be.fulfilled.notify(done)
       stub.restore()
     })
+  })
 
+  it('can retreive all mod values', function (done) {
+    rollout.handler('super_secret', {
+      foo: {
+        percentage: 12
+      },
+      bar: {
+        percentage: 34
+      }
+    })
+    rollout.on('ready', function () {
+      rollout.mods('super_secret', function (mods) {
+        expect(mods).to.deep.equal({foo: '12', bar: '34'})
+        done()
+      })
+    })
+  })
+
+  it('can retreive all flagnames', function () {
+    var o = {
+      foo: {
+        percentage: 100
+      }
+    }
+    rollout.handler('youza', o)
+    rollout.handler('huzzah', o)
+    expect(rollout.flags()).to.deep.equal(['youza', 'huzzah'])
   })
 })
