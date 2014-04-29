@@ -1,4 +1,5 @@
-## `node-rollout`: Feature rollout management for Node.js built on Redis
+## Node Rollout
+Feature rollout management for Node.js built on Redis
 
 ``` sh
 npm install node-rollout --save
