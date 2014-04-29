@@ -83,4 +83,33 @@ describe('rollout', function () {
     )
 
   })
+
+  it('is optimistic', function (done) {
+    var stub = sinon.stub(rollout, 'val_to_percent', function (val) {
+      return 49
+    })
+    rollout.handler('super_secret', {
+      id: {
+        // give feature to 49% of users
+        percentage: 50
+      },
+      employee: {
+        // give to 51% of employees
+        percentage: 51,
+        condition: function isCompanyEmail(val) {
+          return val.match(/@expa\.com$/)
+        }
+      }
+    })
+
+    rollout.on('ready', function () {
+      var out = rollout.get('super_secret', 123, {
+        employee: 'regular@gmail.com'
+      })
+      // is rejected by company email, but falls within allowed regular users
+      expect(out).to.be.fulfilled.notify(done)
+      stub.restore()
+    })
+
+  })
 })

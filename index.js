@@ -30,25 +30,33 @@ Rollout.prototype.handler = function (key, flags) {
     return key + ':' + k
   })
   self.client.mget(keys, function (err, percentages) {
+    var _keys = []
+    var nullKey = false
     percentages.forEach(function (p, i) {
       if (p === null) {
         var val = Math.max(0, Math.min(100, orig_percentages[i] || 0))
-        self.client.set(keys[i], val, function () {
-          self.emit('ready')
-        })
-      } else {
-        self.emit('ready')
+        nullKey = true
+        _keys.push(keys[i], val)
       }
     })
+    if (nullKey) {
+      self.client.mset(_keys, function () {
+        self.emit('ready')
+      })
+    } else {
+      self.emit('ready')
+    }
   })
 }
 
 Rollout.prototype.get = function (key, id, opt_values) {
   var flags = this._handlers[key]
   var likely = this.val_to_percent(key + id)
-  if (!opt_values) opt_values = {
+  var _id = {
     id: id
   }
+  if (!opt_values) opt_values = _id
+  if (!opt_values.id) opt_values.id = id
   return when.promise(function (resolve, reject) {
     var keys = Object.keys(flags).map(function (k) {
       return key + ':' + k
