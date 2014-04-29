@@ -1,16 +1,8 @@
+## `node-rollout`: Feature rollout management for Node.js built on Redis
 
-## API
-
-### `rollout.get(key, uid, values)`
-``` js
-/**
- * @param {String} key The rollout feature key. Eg "new_homepage"
- * @param {String} uid The identifier of which will determine likelyhood of falling in rollout. Typically a user id.
- * @param {Object} values A lookup object with default percentages and conditions
- */
+``` sh
+npm install node-rollout --save
 ```
-
-## Examples
 
 ``` js
 // configuration.js
@@ -57,3 +49,16 @@ function old_home_page (req, res, next) {
 }
 
 ```
+
+
+## API
+
+### `rollout.get(key, uid, values)`
+``` js
+/**
+ * @param {String} key The rollout feature key. Eg "new_homepage"
+ * @param {String} uid The identifier of which will determine likelyhood of falling in rollout. Typically a user id.
+ * @param {Object} values A lookup object with default percentages and conditions
+ */
+```
+
