@@ -7,6 +7,7 @@
  * @param {String} key The rollout feature key. Eg "new_homepage"
  * @param {String} uid The identifier of which will determine likelyhood of falling in rollout. Typically a user id.
  * @param {Object} values A lookup object with default percentages and conditions
+ */
 ```
 
 ## Examples
