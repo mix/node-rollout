@@ -9,22 +9,22 @@ npm install node-rollout --save
 // configuration.js
 var rollout = require('node-rollout')
 rollout.handler('new_homepage', {
+  // 1% of regular users
   id: {
-    // 1% of regular users
     percentage: 1
   },
-  email: {
-    // All users with the company email
+  // All users with the company email
+  employee: {
     percentage: 100,
     condition: function (val) {
       return val.match(/@company-email\.com$/)
     }
   },
-  geo: {
-    // 50% of users in San Francisco
+  // 50% of users in San Francisco
+  geo_sf: {
     percentage: 50,
     condition: function (val) {
-      return distance_between([val.lat, val.lon], [37.43, -121.84], 'miles') < 7
+      return geolib.getDistance([val.lat, val.lon], [37.768, -122.426], 'miles') < 7
     }
   }
 })
@@ -39,7 +39,7 @@ app.get('/', new_homepage, old_homepage)
 
 function new_home_page(req, res, next) {
   rollout.get('new_homepage', current_user.id, {
-    email: current_user.email,
+    employee: current_user.email,
     geo: [current_user.lat, current_user.lon]
   })
     .then(function () {
@@ -63,9 +63,23 @@ function old_home_page (req, res, next) {
  - `uid`: `String` The identifier of which will determine likelyhood of falling in rollout. Typically a user id.
  - `values`: `Object` A lookup object with default percentages and conditions
 
-#### `rollout.handler(key, {flags}.flagname[percentage&condition])`
- - `key`: 'String' The rollout feature key
+#### `rollout.handler(key, flags)`
+ - `key`: `String` The rollout feature key
  - `flags`: `Object`
-  - `flagname`: `String` The name of the flag. Typically `id`, `email`, `ip`, or any other arbitrary item you would want to modify the rollout
+  - `flagname`: `String` The name of the flag. Typically `id`, `employee`, `ip`, or any other arbitrary item you would want to modify the rollout
     - `percentage`: `NumberRange` from 0 - 100. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
     - `condition`: `Function` a white-listing method by which you can add users into a group. See examples.
+
+#### `rollout.update(key, flags)`
+ - `key`: `String` The rollout feature key
+ - `flags`: `Object` mapping of `flagname`:`String` to `percentage`:`Number`
+
+example
+
+``` js
+rollout.update('new_homepage', {
+  id: 33.333,
+  employee: 50,
+  geo_sf: 25
+})
+```

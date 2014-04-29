@@ -1,4 +1,5 @@
 var crypto = require('crypto')
+var when = require('when')
 var alpha = 'abcdefghijklmnopqrstuvwxyz'.split('')
 var letters = /([a-z])/g
 var handlers = {}
@@ -17,11 +18,11 @@ exports.handler = function (key, flags) {
     orig_percentages.push(flags[k].percentage)
     return key + ':' + k
   })
-  memory.mget(keys, function (err, percentages) {
+  client.mget(keys, function (err, percentages) {
     percentages.forEach(function (p, i) {
-      if (v.is.nil(p)) {
+      if (p === null) {
         var val = Math.max(0, Math.min(100, orig_percentages[i] || 0))
-        memory.set(keys[i], val)
+        client.set(keys[i], val)
       }
     })
   })
@@ -35,15 +36,21 @@ exports.get = function (key, id, values) {
       return key + ':' + k
     })
     client.mget(keys, function (err, percentages) {
-      var allowed = false
       var i = 0
       for (var modifier in flags) {
         if (flags[modifier].condition) {
-          var condition_allowed = flags[modifier].condition(values[modifier])
-          if (condition_allowed && likely <= percentages[i]) return resolve()
-        }
+          if (flags[modifier].condition(values[modifier]) && likely <= percentages[i]) return resolve()
+        } else if (likely <= percentages[i]) return resolve()
       }
       reject()
     })
   })
+}
+
+exports.update = function (key, percentage_map) {
+  var keys = []
+  for (var k in percentage_map) {
+    keys.push(key + ':' + k, percentage_map[k])
+  }
+  client.mset(keys)
 }
