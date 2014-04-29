@@ -122,7 +122,7 @@ describe('rollout', function () {
       }
     })
     rollout.on('ready', function () {
-      rollout.mods('super_secret', function (mods) {
+      rollout.mods('super_secret').then(function (mods) {
         expect(mods).to.deep.equal({foo: '12', bar: '34'})
         done()
       })

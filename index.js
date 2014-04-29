@@ -87,19 +87,22 @@ Rollout.prototype.update = function (key, percentage_map) {
   })
 }
 
-Rollout.prototype.mods = function (name, callback) {
+Rollout.prototype.mods = function (name) {
+  var client = this.client
   var keys = []
   var names = []
   for (var flag in this._handlers[name]) {
     keys.push(name + ':' + flag)
     names.push(flag)
   }
-  this.client.mget(keys, function (err, values) {
-    var flags = {}
-    values.forEach(function (val, i) {
-      flags[names[i]] = val
+  return when.promise(function (resolve) {
+    client.mget(keys, function (err, values) {
+      var flags = {}
+      values.forEach(function (val, i) {
+        flags[names[i]] = val
+      })
+      resolve(flags)
     })
-    callback(flags)
   })
 }
 
