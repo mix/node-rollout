@@ -7,7 +7,8 @@ npm install node-rollout --save
 
 ``` js
 // configuration.js
-var rollout = require('node-rollout')
+var client = require('redis').createClient()
+var rollout = require('node-rollout')(client)
 rollout.handler('new_homepage', {
   // 1% of regular users
   id: {
