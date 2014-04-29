@@ -1,8 +1,8 @@
 var chai = require('chai')
   , sinon = require('sinon')
+  , v = require('valentine')
   , redis = require('redis').createClient()
   , promised = require('chai-as-promised')
-  , v = require('valentine')
   , subject = require('../')
   , expect = chai.expect
 
@@ -24,7 +24,7 @@ describe('rollout', function () {
     rollout.handler('secret_feature', {
       employee: {
         percentage: 100,
-        condition: function (val) {
+        condition: function isCompanyEmail(val) {
           return val.match(/@expa\.com$/)
         }
       }
