@@ -1,6 +1,6 @@
 {
   "name": "node-rollout",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "feature rollout management",
   "author": "Dustin Diaz",
   "license": "MIT",
