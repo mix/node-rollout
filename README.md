@@ -62,6 +62,21 @@ function old_home_page (req, res, next) {
  - `key`: `String` The rollout feature key. Eg "new_homepage"
  - `uid`: `String` The identifier of which will determine likelyhood of falling in rollout. Typically a user id.
  - `values`: `Object` A lookup object with default percentages and conditions
+ - returns `Promise`
+
+``` js
+rollout.get('button_test', 123, {
+  id: {
+    percentage: 50
+  }
+})
+  .then(function () {
+    render('blue_button')
+  })
+  .otherwise(function () {
+    render('red_button')
+  })
+```
 
 #### `rollout.handler(key, flags)`
  - `key`: `String` The rollout feature key
@@ -73,14 +88,16 @@ function old_home_page (req, res, next) {
 #### `rollout.update(key, flags)`
  - `key`: `String` The rollout feature key
  - `flags`: `Object` mapping of `flagname`:`String` to `percentage`:`Number`
-
-example
+ - returns `Promise`
 
 ``` js
 rollout.update('new_homepage', {
   id: 33.333,
   employee: 50,
   geo_sf: 25
+})
+.then(function () {
+  // values have been updated
 })
 ```
 
@@ -98,9 +115,8 @@ rollout.update('new_homepage', {
 
 #### `rollout.flags()`
 
-
  ``` js
-rollout.flags() == ['new_homepage']
+rollout.flags() == ['new_homepage', 'other_secret_feature']
  ```
 
 ### License MIT

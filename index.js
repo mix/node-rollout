@@ -1,35 +1,50 @@
 var crypto = require('crypto')
-var when = require('when')
-var alpha = 'abcdefghijklmnopqrstuvwxyz'.split('')
-var letters = /([a-z])/g
+  , util = require('util')
+  , when = require('when')
+  , EventEmitter = require('events').EventEmitter
+  , alpha = 'abcdefghijklmnopqrstuvwxyz'.split('')
+  , letters = /([a-z])/g
+
+function defaultCondition() {
+  return true
+}
 
 module.exports = function (client) {
   return new Rollout(client)
 }
 
 function Rollout(client) {
+  EventEmitter.call(this)
   this.client = client
   this._handlers = {}
 }
 
+util.inherits(Rollout, EventEmitter)
+
 Rollout.prototype.handler = function (key, flags) {
-  this._handlers[key] = flags
+  var self = this
+  self._handlers[key] = flags
   var orig_percentages = []
   var keys = Object.keys(flags).map(function (k) {
     orig_percentages.push(flags[k].percentage)
     return key + ':' + k
   })
-  this.client.mget(keys, function (err, percentages) {
+  self.client.mget(keys, function (err, percentages) {
     percentages.forEach(function (p, i) {
       if (p === null) {
         var val = Math.max(0, Math.min(100, orig_percentages[i] || 0))
-        this.client.set(keys[i], val)
+        self.client.set(keys[i], val, function () {
+          self.emit('ready')
+        })
+      } else {
+        self.emit('ready')
       }
-    }, this)
-  }.bind(this))
+    })
+  })
 }
 
-Rollout.prototype.get = function (key, id, values) {
+Rollout.prototype.get = function (key, id, opt_values) {
+  if (!opt_values) opt_values = {}
   var flags = this._handlers[key]
   var likely = this.val_to_percent(key + id)
   return when.promise(function (resolve, reject) {
@@ -39,7 +54,12 @@ Rollout.prototype.get = function (key, id, values) {
     this.client.mget(keys, function (err, percentages) {
       var i = 0
       for (var modifier in flags) {
-        if (flags[modifier].condition(values[modifier]) && likely < percentages[i]) return resolve()
+        // in the circumstance that the key is not found, default to original value
+        if (percentages[i] === null) {
+          percentages[i] = flags[modifier].percentage
+        }
+        if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
+        if (flags[modifier].condition(opt_values[modifier]) && likely < percentages[i]) return resolve(true)
       }
       reject(new Error('rejected'))
     })
@@ -47,11 +67,14 @@ Rollout.prototype.get = function (key, id, values) {
 }
 
 Rollout.prototype.update = function (key, percentage_map) {
-  var keys = []
-  for (var k in percentage_map) {
-    keys.push(key + ':' + k, percentage_map[k])
-  }
-  this.client.mset(keys)
+  var self = this
+  return when.promise(function (resolve) {
+    var keys = []
+    for (var k in percentage_map) {
+      keys.push(key + ':' + k, percentage_map[k].percentage)
+    }
+    self.client.mset(keys, resolve)
+  })
 }
 
 Rollout.prototype.mods = function (name, callback) {
