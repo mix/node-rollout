@@ -29,12 +29,14 @@ rollout.handler('new_homepage', {
     }
   }
 })
+
+module.exports = rollout
 ```
 
 ``` js
 // A typical Express app
 ...
-require('./configuration')
+var rollout = require('./configuration')
 
 app.get('/', new_homepage, old_homepage)
 
