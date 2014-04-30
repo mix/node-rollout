@@ -81,7 +81,7 @@ Rollout.prototype.update = function (key, percentage_map) {
   return when.promise(function (resolve) {
     var keys = []
     for (var k in percentage_map) {
-      keys.push(key + ':' + k, percentage_map[k].percentage)
+      keys.push(key + ':' + k, percentage_map[k])
     }
     self.client.mset(keys, resolve)
   })

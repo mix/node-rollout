@@ -67,9 +67,7 @@ describe('rollout', function () {
       },
       function (f) {
         rollout.update('button_test', {
-          id: {
-            percentage: 49
-          }
+          id: 49
         })
         .then(function () {
           var out = rollout.get('button_test', 123)
