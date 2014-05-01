@@ -70,6 +70,7 @@ Rollout.prototype.get = function (key, id, opt_values) {
         }
         if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
         if (flags[modifier].condition(opt_values[modifier]) && likely < percentages[i]) return resolve(true)
+        i++
       }
       reject()
     })
