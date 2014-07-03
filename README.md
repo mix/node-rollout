@@ -93,6 +93,7 @@ rollout.get('another_feature', 123, {
   - `flagname`: `String` The name of the flag. Typically `id`, `employee`, `ip`, or any other arbitrary item you would want to modify the rollout
     - `percentage`: `NumberRange` from 0 - 100. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
     - `condition`: `Function` a white-listing method by which you can add users into a group. See examples.
+      - if `condition` returns a `Promise` (*a thenable object*), then it will use the fulfillment of the `Promise` to resolve or reject the `handler`
 
 ``` js
 rollout.handler('admin_section', {
@@ -105,6 +106,17 @@ rollout.handler('admin_section', {
     percentage: 100,
     condition: function (val) {
       return val.match(/@company-email\.com$/)
+    }
+  },
+  // active beta testers...
+  betaTesters: {
+    percentage: 100,
+    condition: function (user) {
+      return new Promise(function (resolve, reject) {
+        redisClient.get('betagroup:' + user.id, function (err, is_awesome) {
+          is_awesome ? resolve() : reject()
+        })
+      })
     }
   }
 })
