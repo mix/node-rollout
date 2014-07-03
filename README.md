@@ -108,12 +108,12 @@ rollout.handler('admin_section', {
       return val.match(/@company-email\.com$/)
     }
   },
-  // active beta testers...
-  betaTesters: {
+  // special invited people
+  contractors: {
     percentage: 100,
     condition: function (user) {
       return new Promise(function (resolve, reject) {
-        redisClient.get('betagroup:' + user.id, function (err, is_awesome) {
+        redisClient.get('contractors:' + user.id, function (err, is_awesome) {
           is_awesome ? resolve() : reject()
         })
       })
