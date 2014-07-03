@@ -1,5 +1,6 @@
 var chai = require('chai')
   , sinon = require('sinon')
+  , when = require('when')
   , v = require('valentine')
   , redis = require('redis').createClient()
   , promised = require('chai-as-promised')
@@ -35,6 +36,104 @@ describe('rollout', function () {
     expect(out).to.be.fulfilled.notify(done)
 
   })
+
+  it('should fulfill when condition returns a resolved promise', function (done) {
+    rollout.handler('promise_secret_feature', {
+      beta_testa: {
+        percentage: 100,
+        condition: function () {
+          return when.promise(function (resolve, reject) {
+            setTimeout(resolve, 10)
+          })
+        }
+      }
+    })
+    var out = rollout.get('promise_secret_feature', 123, {
+      beta_testa: 'foo'
+    })
+    expect(out).to.be.fulfilled.notify(done)
+  })
+
+  it('should reject when condition returns a rejected promise', function (done) {
+    rollout.handler('promise_secret_feature', {
+      beta_testa: {
+        percentage: 100,
+        condition: function () {
+          return when.reject()
+        }
+      }
+    })
+    var out = rollout.get('promise_secret_feature', 123, {
+      beta_testa: 'foo'
+    })
+    expect(out).to.be.rejected.notify(done)
+  })
+
+  it('should fulfill if `any` condition passes', function (done) {
+    rollout.handler('mixed_secret_feature', {
+      beta_testa: {
+        percentage: 100,
+        condition: function () {
+          return when.resolve()
+        }
+      },
+      beta_testa1: {
+        percentage: 0,
+        condition: function () {
+          return when.resolve()
+        }
+      },
+      beta_testa2: {
+        percentage: 100,
+        condition: function () {
+          return when.reject()
+        }
+      },
+      beta_testa3: {
+        percentage: 100,
+        condition: function () {
+          return false
+        }
+      }
+    })
+    var out = rollout.get('mixed_secret_feature', 123, {
+      beta_testa: 'foo',
+      beta_testa1: 'foo',
+      beta_testa2: 'foo',
+      beta_testa3: 'foo'
+    })
+    expect(out).to.be.fulfilled.notify(done)
+  })
+
+  it('should reject if all conditions fail', function (done) {
+    rollout.handler('mixed_secret_feature', {
+      beta_testa1: {
+        percentage: 0,
+        condition: function () {
+          return when.resolve()
+        }
+      },
+      beta_testa2: {
+        percentage: 100,
+        condition: function () {
+          return when.reject()
+        }
+      },
+      beta_testa3: {
+        percentage: 100,
+        condition: function () {
+          return false
+        }
+      }
+    })
+    var out = rollout.get('mixed_secret_feature', 123, {
+      beta_testa1: 'foo',
+      beta_testa2: 'foo',
+      beta_testa3: 'foo'
+    })
+    expect(out).to.be.rejected.notify(done)
+  })
+
   it('should reject if not in allowed percentage', function (done) {
     var stub = sinon.stub(rollout, 'val_to_percent', function (val) {
       return 51.001

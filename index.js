@@ -63,16 +63,25 @@ Rollout.prototype.get = function (key, id, opt_values) {
     })
     this.client.mget(keys, function (err, percentages) {
       var i = 0
+      var deferreds = []
       for (var modifier in flags) {
         // in the circumstance that the key is not found, default to original value
         if (percentages[i] === null) {
           percentages[i] = flags[modifier].percentage
         }
-        if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
-        if (flags[modifier].condition(opt_values[modifier]) && likely < percentages[i]) return resolve(true)
+        if (likely < percentages[i]) {
+          if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
+          var output = flags[modifier].condition(opt_values[modifier])
+          if (when.isPromiseLike(output)) deferreds.push(output)
+          else if (output) return resolve(true)
+        }
         i++
       }
-      reject()
+      if (deferreds.length) {
+        when.any(deferreds).then(resolve, reject)
+      } else {
+        reject()
+      }
     })
   }.bind(this))
 }
