@@ -87,6 +87,37 @@ rollout.get('another_feature', 123, {
   })
 ```
 
+#### `rollout.multi(keys)`
+The value of this method lets you do a batch redis call (using `redis.multi()`) allowing you to get multiple flags in one request
+
+ - `keys`: `Array` A list of tuples containing what you would ordinarily pass to `get`
+ - returns `SettlePromise`
+
+``` js
+rollout.multi([
+  ['onboarding', 123, {}],
+  ['email_inviter', 123, {}],
+  ['facebook_chat', 123, {
+    employees: req.user.email // 'joe@company.com'
+  }]
+])
+  .then(function (results) {
+    results.forEach(function (r) {
+      console.log(i.state) // 'fulfilled' || 'rejected'
+    })
+  })
+
+rollout.get('another_feature', 123, {
+  employee: 'user@example.org'
+})
+  .then(function () {
+    render('blue_button')
+  })
+  .otherwise(function () {
+    render('red_button')
+  })
+```
+
 #### `rollout.handler(key, flags)`
  - `key`: `String` The rollout feature key
  - `flags`: `Object`

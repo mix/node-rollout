@@ -49,7 +49,17 @@ Rollout.prototype.handler = function (key, flags) {
   })
 }
 
-Rollout.prototype.get = function (key, id, opt_values) {
+Rollout.prototype.multi = function (keys) {
+  var multi = this.client.multi()
+  var self = this
+  var settler = when.settle(keys.map(function (k) {
+    return self.get(k[0], k[1], k[2], multi)
+  }))
+  multi.exec(function () {})
+  return settler
+}
+
+Rollout.prototype.get = function (key, id, opt_values, multi) {
   var flags = this._handlers[key]
   var likely = this.val_to_percent(key + id)
   var _id = {
@@ -61,7 +71,8 @@ Rollout.prototype.get = function (key, id, opt_values) {
     var keys = Object.keys(flags).map(function (k) {
       return key + ':' + k
     })
-    this.client.mget(keys, function (err, percentages) {
+    var client = multi || this.client
+    client.mget(keys, function (err, percentages) {
       var i = 0
       var deferreds = []
       for (var modifier in flags) {
