@@ -132,8 +132,5 @@ Rollout.prototype.flags = function () {
 }
 
 Rollout.prototype.val_to_percent = function (text) {
-  var n = crypto.createHash('md5').update(text).digest('hex').replace(letters, function (_, letter) {
-    return alpha.indexOf(letter)
-  })
-  return parseFloat(n.substr(0, 2) + '.' + n.substr(2, 3))
+  return parseInt(crypto.createHash('md5').update(text).digest('hex').substr(0, 5), 16) % 100;
 }
