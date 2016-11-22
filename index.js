@@ -2,8 +2,6 @@ var crypto = require('crypto')
   , util = require('util')
   , Promise = require('bluebird')
   , EventEmitter = require('events').EventEmitter
-  , alpha = 'abcdefghijklmnopqrstuvwxyz'.split('')
-  , letters = /([a-z])/g
 
 function defaultCondition() {
   return true
