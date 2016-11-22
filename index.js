@@ -1,6 +1,6 @@
 var crypto = require('crypto')
   , util = require('util')
-  , when = require('when')
+  , Promise = require('bluebird')
   , EventEmitter = require('events').EventEmitter
   , alpha = 'abcdefghijklmnopqrstuvwxyz'.split('')
   , letters = /([a-z])/g
@@ -52,9 +52,9 @@ Rollout.prototype.handler = function (key, flags) {
 Rollout.prototype.multi = function (keys) {
   var multi = this.client.multi()
   var self = this
-  var settler = when.settle(keys.map(function (k) {
-    return self.get(k[0], k[1], k[2], multi)
-  }))
+  var settler = Promise.map(keys, function (k) {
+    return self.get(k[0], k[1], k[2], multi).reflect()
+  })
   multi.exec(function () {})
   return settler
 }
@@ -67,11 +67,11 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
   }
   if (!opt_values) opt_values = _id
   if (!opt_values.id) opt_values.id = id
-  return when.promise(function (resolve, reject) {
-    var keys = Object.keys(flags).map(function (k) {
-      return key + ':' + k
-    })
-    var client = multi || this.client
+  var keys = Object.keys(flags).map(function (k) {
+    return key + ':' + k
+  })
+  var client = multi || this.client
+  return new Promise(function (resolve, reject) {
     client.mget(keys, function (err, percentages) {
       var i = 0
       var deferreds = []
@@ -83,13 +83,12 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
         if (likely < percentages[i]) {
           if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
           var output = flags[modifier].condition(opt_values[modifier])
-          if (when.isPromiseLike(output)) deferreds.push(output)
-          else if (output) return resolve(true)
+          deferreds.push(Promise.resolve(output))
         }
         i++
       }
       if (deferreds.length) {
-        when.any(deferreds).then(resolve, reject)
+        Promise.any(deferreds).then(resolve, reject)
       } else {
         reject()
       }
@@ -98,14 +97,13 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
 }
 
 Rollout.prototype.update = function (key, percentage_map) {
-  var self = this
-  return when.promise(function (resolve) {
-    var keys = []
-    for (var k in percentage_map) {
-      keys.push(key + ':' + k, percentage_map[k])
-    }
-    self.client.mset(keys, resolve)
-  })
+  var keys = []
+  for (var k in percentage_map) {
+    keys.push(key + ':' + k, percentage_map[k])
+  }
+  return new Promise(function (resolve) {
+    this.client.mset(keys, resolve)
+  }.bind(this))
 }
 
 Rollout.prototype.mods = function (name) {
@@ -116,7 +114,7 @@ Rollout.prototype.mods = function (name) {
     keys.push(name + ':' + flag)
     names.push(flag)
   }
-  return when.promise(function (resolve) {
+  return new Promise(function (resolve) {
     client.mget(keys, function (err, values) {
       var flags = {}
       values.forEach(function (val, i) {
