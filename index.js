@@ -21,13 +21,13 @@ util.inherits(Rollout, EventEmitter)
 
 Rollout.prototype.handler = function (key, flags) {
   var self = this
-  self._handlers[key] = flags
+  this._handlers[key] = flags
   var orig_percentages = []
   var keys = Object.keys(flags).map(function (k) {
     orig_percentages.push(flags[k].percentage)
     return key + ':' + k
   })
-  self.client.mget(keys, function (err, percentages) {
+  this.client.mget(keys, function (err, percentages) {
     var _keys = []
     var nullKey = false
     percentages.forEach(function (p, i) {
@@ -70,27 +70,33 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
   })
   var client = multi || this.client
   return new Promise(function (resolve, reject) {
-    client.mget(keys, function (err, percentages) {
-      var i = 0
-      var deferreds = []
-      for (var modifier in flags) {
-        // in the circumstance that the key is not found, default to original value
-        if (percentages[i] === null) {
-          percentages[i] = flags[modifier].percentage
-        }
-        if (likely < percentages[i]) {
-          if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
-          var output = flags[modifier].condition(opt_values[modifier])
-          deferreds.push(Promise.resolve(output))
-        }
-        i++
-      }
-      if (deferreds.length) {
-        Promise.any(deferreds).then(resolve, reject)
-      } else {
-        reject()
-      }
+    client.mget(keys, function (err, result) {
+      if (err) return reject(err)
+      resolve(result)
     })
+  })
+  .then(function (percentages) {
+    var i = 0
+    var deferreds = []
+    for (var modifier in flags) {
+      // in the circumstance that the key is not found, default to original value
+      if (percentages[i] === null) {
+        percentages[i] = flags[modifier].percentage
+      }
+      if (likely < percentages[i]) {
+        if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
+        var output = flags[modifier].condition(opt_values[modifier])
+        if (output) {
+          if (typeof output.then === 'function') deferreds.push(output)
+          else return true
+        }
+      }
+      i++
+    }
+    if (deferreds.length) {
+      return Promise.any(deferreds)
+    }
+    throw new Error('Conditions do not exist')
   }.bind(this))
 }
 
@@ -99,28 +105,34 @@ Rollout.prototype.update = function (key, percentage_map) {
   for (var k in percentage_map) {
     keys.push(key + ':' + k, percentage_map[k])
   }
-  return new Promise(function (resolve) {
-    this.client.mset(keys, resolve)
+  return new Promise(function (resolve, reject) {
+    this.client.mset(keys, function (err, result) {
+      if (err) return reject(err)
+      resolve(result)
+    })
   }.bind(this))
 }
 
 Rollout.prototype.mods = function (name) {
-  var client = this.client
   var keys = []
   var names = []
   for (var flag in this._handlers[name]) {
     keys.push(name + ':' + flag)
     names.push(flag)
   }
-  return new Promise(function (resolve) {
-    client.mget(keys, function (err, values) {
+  return new Promise(function (resolve, reject) {
+    this.client.mget(keys, function (err, result) {
+      if (err) return reject(err)
+      resolve(result)
+    })
+  }.bind(this))
+    .then(function (values) {
       var flags = {}
       values.forEach(function (val, i) {
         flags[names[i]] = val
       })
-      resolve(flags)
+      return flags
     })
-  })
 }
 
 Rollout.prototype.flags = function () {

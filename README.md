@@ -1,4 +1,6 @@
 ## Node Rollout
+[![CircleCI](https://circleci.com/gh/mix/node-rollout/tree/master.svg?style=svg)](https://circleci.com/gh/mix/node-rollout/tree/master)
+
 Feature rollout management for Node.js built on Redis
 
 ``` sh
@@ -188,7 +190,7 @@ rollout.flags() == ['new_homepage', 'other_secret_feature']
 ```
 
 ### Tests
-see [tests/index.js](tests/index.js)
+see [tests/index-test.js](tests/index-test.js)
 
 ``` sh
 make test
