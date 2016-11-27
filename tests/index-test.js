@@ -29,10 +29,9 @@ describe('rollout', function () {
         }
       }
     })
-    var out = subject.get('secret_feature', 123, {
+    return expect(subject.get('secret_feature', 123, {
       employee: 'ded@expa.com'
-    })
-    return expect(out).to.be.fulfilled
+    })).to.be.fulfilled
   })
 
   it('fulfills when condition returns a resolved promise', function () {
@@ -46,10 +45,9 @@ describe('rollout', function () {
         }
       }
     })
-    var out = subject.get('promise_secret_feature', 123, {
+    return expect(subject.get('promise_secret_feature', 123, {
       beta_testa: 'foo'
-    })
-    return expect(out).to.be.fulfilled
+    })).to.be.fulfilled
   })
 
   it('rejects when condition returns a rejected promise', function () {
@@ -61,10 +59,9 @@ describe('rollout', function () {
         }
       }
     })
-    var out = subject.get('promise_secret_feature', 123, {
+    return expect(subject.get('promise_secret_feature', 123, {
       beta_testa: 'foo'
-    })
-    return expect(out).to.be.rejected
+    })).to.be.rejected
   })
 
   it('fulfills if `any` condition passes', function () {
@@ -94,14 +91,13 @@ describe('rollout', function () {
         }
       }
     })
-    var out = subject.get('mixed_secret_feature', 123, {
+
+    return expect(subject.get('mixed_secret_feature', 123, {
       beta_testa: 'foo',
       beta_testa1: 'foo',
       beta_testa2: 'foo',
       beta_testa3: 'foo'
-    })
-
-    return expect(out).to.be.fulfilled
+    })).to.be.fulfilled
   })
 
   it('rejects if all conditions fail', function () {
@@ -125,13 +121,12 @@ describe('rollout', function () {
         }
       }
     })
-    var out = subject.get('mixed_secret_feature', 123, {
+
+    return expect(subject.get('mixed_secret_feature', 123, {
       beta_testa1: 'foo',
       beta_testa2: 'foo',
       beta_testa3: 'foo'
-    })
-
-    return expect(out).to.be.rejected
+    })).to.be.rejected
   })
 
   it('can retrieve all mod values', function (done) {
@@ -151,7 +146,7 @@ describe('rollout', function () {
     })
   })
 
-  it('can retreive all flagnames', function () {
+  it('can retrieve all flagnames', function () {
     var o = {
       foo: {
         percentage: 100
@@ -160,6 +155,28 @@ describe('rollout', function () {
     subject.handler('youza', o)
     subject.handler('huzzah', o)
     expect(subject.flags()).to.deep.equal(['youza', 'huzzah'])
+  })
+
+  it('gets multiple keys', function () {
+    subject.handler('secret_feature', {
+      employee: {
+        percentage: 100,
+        condition: function isCompanyEmail(val) {
+          return val.match(/@expa\.com$/)
+        }
+      }
+    })
+    return subject.get('secret_feature', 123, {
+      employee: 'ded@expa.com'
+    })
+    .then(function () {
+      return subject.multi([['secret_feature', 123, {
+        employee: 'ded@expa.com'
+      }]])
+      .then(function (result) {
+        expect(result[0].isFulfilled()).to.be.true
+      })
+    })
   })
 
   context('not allowed percentage', function () {

@@ -49,12 +49,18 @@ Rollout.prototype.handler = function (key, flags) {
 
 Rollout.prototype.multi = function (keys) {
   var multi = this.client.multi()
-  var self = this
-  var settler = Promise.map(keys, function (k) {
-    return self.get(k[0], k[1], k[2], multi).reflect()
+  var promises = keys.map(function (k) {
+    return this.get(k[0], k[1], k[2], multi)
+  }.bind(this))
+  return new Promise(function (resolve, reject) {
+    multi.exec(function (err, result) {
+      if (err) return reject(err)
+      resolve(result)
+    })
   })
-  multi.exec(function () {})
-  return settler
+  .then(function () {
+    return Promise.all(promises.map(function (p) { return p.reflect() }))
+  })
 }
 
 Rollout.prototype.get = function (key, id, opt_values, multi) {

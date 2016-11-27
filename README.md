@@ -105,7 +105,7 @@ rollout.multi([
 ])
   .then(function (results) {
     results.forEach(function (r) {
-      console.log(i.state) // 'fulfilled' || 'rejected'
+      console.log(i.isFulfilled()) // Or 'isRejected()'
     })
   })
 
