@@ -2,7 +2,7 @@
   "name": "node-rollout",
   "version": "0.3.0",
   "description": "feature rollout management",
-  "author": "Dustin Diaz",
+  "author": "Ali Faiz & Dustin Diaz",
   "license": "MIT",
   "main": "index.js",
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ded/node-rollout.git"
+    "url": "https://github.com/mix/node-rollout.git"
   },
   "devDependencies": {
     "redis": "~0.10.1",
