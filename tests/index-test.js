@@ -2,8 +2,9 @@ var chai = require('chai')
   , sinon = require('sinon')
   , v = require('valentine')
   , redis = require('redis').createClient()
+  , Promise = require('bluebird')
   , promised = require('chai-as-promised')
-  , Subject = require('../')
+  , rollout = require('../')
   , expect = chai.expect
 
 chai.use(promised)
@@ -13,7 +14,7 @@ describe('rollout', function () {
   var subject
 
   beforeEach(function () {
-    subject = Subject(redis)
+    subject = rollout(redis)
   })
 
   afterEach(function (done) {
