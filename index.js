@@ -102,7 +102,7 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
     if (deferreds.length) {
       return Promise.any(deferreds)
     }
-    throw new Error('Conditions do not exist')
+    throw new Error('Not inclusive of any partition for key[' + key + '] id[' + id + ']')
   }.bind(this))
 }
 
