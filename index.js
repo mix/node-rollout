@@ -59,7 +59,7 @@ Rollout.prototype.multi = function (keys) {
     })
   })
   .then(function () {
-    return Promise.all(promises.map(function (p) { return p.reflect() }))
+    return promises.map(function (p) { return p.reflect() })
   })
 }
 
