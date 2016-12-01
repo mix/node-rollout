@@ -50,7 +50,7 @@ Rollout.prototype.handler = function (key, flags) {
 Rollout.prototype.multi = function (keys) {
   var multi = this.client.multi()
   var promises = keys.map(function (k) {
-    return this.get(k[0], k[1], k[2], multi)
+    return this.get(k[0], k[1], k[2], multi).reflect()
   }.bind(this))
   return new Promise(function (resolve, reject) {
     multi.exec(function (err, result) {
@@ -58,9 +58,7 @@ Rollout.prototype.multi = function (keys) {
       resolve(result)
     })
   })
-  .then(function () {
-    return promises.map(function (p) { return p.reflect() })
-  })
+  .then(Promise.all.bind(Promise, promises))
 }
 
 Rollout.prototype.get = function (key, id, opt_values, multi) {

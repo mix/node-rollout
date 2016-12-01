@@ -176,6 +176,7 @@ describe('rollout', function () {
       }]])
       .then(function (result) {
         expect(result[0].isFulfilled()).to.be.true
+        expect(result[0].value()).to.be.true
       })
     })
   })
