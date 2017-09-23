@@ -196,6 +196,9 @@ see [tests/index-test.js](tests/index-test.js)
 make test
 ```
 
+### User Interface
+Consider using [rollout-ui](https://github.com/ded/rollout-ui) to administrate the values of your rollout flags in real-time (as opposed to doing a full deploy). It will make your life much easier and you'll be happy :)
+
 ### License MIT
 
 Happy rollout!
