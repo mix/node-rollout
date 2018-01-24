@@ -98,7 +98,13 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
       i++
     }
     if (deferreds.length) {
-      return Promise.any(deferreds)
+      return Promise.all(deferreds)
+      .then(function (results) {
+        for (var i = 0, len = results.length; i < len; i++) {
+          if (results[i]) return true
+        }
+        return false
+      })
     }
     throw new Error('Not inclusive of any partition for key[' + key + '] id[' + id + ']')
   }.bind(this))
