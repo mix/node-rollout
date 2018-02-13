@@ -36,6 +36,23 @@ describe('rollout', function () {
     })).to.be.fulfilled
   })
 
+  it('fulfills with applicable modifier for percentage', function () {
+    subject.handler('secret_feature', {
+      everyone: {
+        percentage: 0
+      },
+      employee: {
+        percentage: 100,
+        condition: isCompanyEmail
+      }
+    })
+    var result = subject.get('secret_feature', 123, {
+      employee: 'me@company.com'
+    })
+    expect(result).to.be.fulfilled
+    expect(result).to.eventually.equal('employee')
+  })
+
   it('fulfills when condition returns a resolved promise', function () {
     subject.handler('promise_secret_feature', {
       beta_testa: {
@@ -177,9 +194,9 @@ describe('rollout', function () {
       ])
       .then(function (result) {
         expect(result[0].isFulfilled()).to.be.true
-        expect(result[0].value()).to.be.true
+        expect(result[0].value()).to.equal('employee')
         expect(result[1].isFulfilled()).to.be.true
-        expect(result[1].value()).to.be.true
+        expect(result[1].value()).to.equal('employee')
         expect(result[2].isRejected()).to.be.true
       })
     })

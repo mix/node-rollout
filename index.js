@@ -83,9 +83,11 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
           if (typeof output.then === 'function') {
             // Normalize thenable to Bluebird Promise
             // Reflect the Promise to coalesce rejections
-            deferreds.push(Promise.resolve(output).reflect())
+            output = Promise.resolve(output).reflect()
+            output.flagModifier = modifier
+            deferreds.push(output)
           } else {
-            return true
+            return modifier
           }
         }
       }
