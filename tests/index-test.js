@@ -1,6 +1,5 @@
 var chai = require('chai')
   , sinon = require('sinon')
-  , v = require('valentine')
   , redis = require('redis').createClient()
   , Promise = require('bluebird')
   , promised = require('chai-as-promised')
