@@ -9,6 +9,10 @@ var chai = require('chai')
 chai.use(promised)
 chai.use(require('sinon-chai'))
 
+function isCompanyEmail(val) {
+  return /@company\.com$/.test(val)
+}
+
 describe('rollout', function () {
   var subject
 
@@ -24,13 +28,11 @@ describe('rollout', function () {
     subject.handler('secret_feature', {
       employee: {
         percentage: 100,
-        condition: function isCompanyEmail(val) {
-          return val.match(/@expa\.com$/)
-        }
+        condition: isCompanyEmail
       }
     })
     return expect(subject.get('secret_feature', 123, {
-      employee: 'ded@expa.com'
+      employee: 'me@company.com'
     })).to.be.fulfilled
   })
 
@@ -161,21 +163,24 @@ describe('rollout', function () {
     subject.handler('secret_feature', {
       employee: {
         percentage: 100,
-        condition: function isCompanyEmail(val) {
-          return val.match(/@expa\.com$/)
-        }
+        condition: isCompanyEmail
       }
     })
     return subject.get('secret_feature', 123, {
-      employee: 'ded@expa.com'
+      employee: 'me@company.com'
     })
     .then(function () {
-      return subject.multi([['secret_feature', 123, {
-        employee: 'ded@expa.com'
-      }]])
+      return subject.multi([
+        ['secret_feature', 123, { employee: 'me@company.com' }],
+        ['secret_feature', 321, { employee: 'you@company.com' }],
+        ['secret_feature', 231, { employee: 'someone@else.com' }]
+      ])
       .then(function (result) {
         expect(result[0].isFulfilled()).to.be.true
         expect(result[0].value()).to.be.true
+        expect(result[1].isFulfilled()).to.be.true
+        expect(result[1].value()).to.be.true
+        expect(result[2].isRejected()).to.be.true
       })
     })
   })
@@ -241,9 +246,7 @@ describe('rollout', function () {
         employee: {
           // give to 51% of employees
           percentage: 51,
-          condition: function isCompanyEmail(val) {
-            return val.match(/@expa\.com$/)
-          }
+          condition: isCompanyEmail
         }
       })
 
