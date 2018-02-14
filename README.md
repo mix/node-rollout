@@ -3,12 +3,18 @@
 [![Maintainability](https://api.codeclimate.com/v1/badges/1cf0304dee9b1f264a64/maintainability)](https://codeclimate.com/github/mix/node-rollout/maintainability)
 Feature rollout management for Node.js built on Redis
 
+### Example Usage
+
+#### Installation
+
 ``` sh
 npm install node-rollout --save
 ```
 
+#### Basic Configuration
+
 ``` js
-// configuration.js
+// basic_configuration.js
 var client = require('redis').createClient()
 var rollout = require('node-rollout')(client)
 rollout.handler('new_homepage', {
@@ -20,7 +26,7 @@ rollout.handler('new_homepage', {
   employee: {
     percentage: 100,
     condition: function (val) {
-      return val.match(/@company-email\.com$/)
+      return /@company-email\.com$/.test(val)
     }
   },
   // 50% of users in San Francisco
@@ -29,6 +35,16 @@ rollout.handler('new_homepage', {
     condition: function (val) {
       return geolib.getDistance([val.lat, val.lon], [37.768, -122.426], 'miles') < 7
     }
+  },
+  // Asynchronous database lookup
+  admin: {
+    percentage: 100,
+    condition: function (val) {
+      return db.lookupUser(val)
+      .then(function (user) {
+        return user.isAdmin()
+      })
+    }
   }
 })
 
@@ -36,21 +52,22 @@ module.exports = rollout
 ```
 
 ``` js
-// A typical Express app
+// A typical Express app demonstrating rollout flags
 ...
-var rollout = require('./configuration')
+var rollout = require('./basic_configuration')
 
 app.get('/', new_homepage, old_homepage)
 
 function new_home_page(req, res, next) {
   rollout.get('new_homepage', req.current_user.id, {
     employee: req.current_user.email,
-    geo: [req.current_user.lat, req.current_user.lon]
+    geo: [req.current_user.lat, req.current_user.lon],
+    admin: req.current_user.id
   })
-    .then(function () {
-      res.render('home/new-index')
-    })
-    .otherwise(next)
+  .then(function () {
+    res.render('home/new-index')
+  })
+  .catch(next)
 }
 
 function old_home_page (req, res, next) {
@@ -59,6 +76,44 @@ function old_home_page (req, res, next) {
 
 ```
 
+#### Experiment groups
+
+``` js
+// experiment_groups_configuration.js
+var client = require('redis').createClient()
+var rollout = require('node-rollout')(client)
+// An experiment with 3 randomly-assigned groups
+rollout.handler('homepage_variant', {
+  versionA: {
+    percentage: { min: 0, max: 33 }
+  },
+  versionB: {
+    percentage: { min: 33, max: 66 }
+  },
+  versionC: {
+    percentage: { min: 66, max: 100 }
+  }
+})
+
+module.exports = rollout
+```
+
+``` js
+// A typical Express app demonstrating experiment groups
+...
+var rollout = require('./experiment_groups_configuration')
+
+app.get('/', homepage)
+
+function homepage(req, res, next) {
+  rollout.get('homepage_variant', req.current_user.id)
+  .then(function (version) {
+    console.assert(/^version(A|B|C)$/.test(version) === true)
+    res.render('home/' + version)
+  })
+}
+
+```
 
 ### API Options
 
@@ -71,22 +126,22 @@ function old_home_page (req, res, next) {
 
 ``` js
 rollout.get('button_test', 123)
-  .then(function () {
-    render('blue_button')
-  })
-  .otherwise(function () {
-    render('red_button')
-  })
+.then(function () {
+  render('blue_button')
+})
+.catch(function () {
+  render('red_button')
+})
 
 rollout.get('another_feature', 123, {
   employee: 'user@example.org'
 })
-  .then(function () {
-    render('blue_button')
-  })
-  .otherwise(function () {
-    render('red_button')
-  })
+.then(function () {
+  render('blue_button')
+})
+.catch(function () {
+  render('red_button')
+})
 ```
 
 #### `rollout.multi(keys)`
@@ -103,28 +158,30 @@ rollout.multi([
     employees: req.user.email // 'joe@company.com'
   }]
 ])
-  .then(function (results) {
-    results.forEach(function (r) {
-      console.log(i.isFulfilled()) // Or 'isRejected()'
-    })
+.then(function (results) {
+  results.forEach(function (r) {
+    console.log(i.isFulfilled()) // Or 'isRejected()'
   })
+})
 
 rollout.get('another_feature', 123, {
   employee: 'user@example.org'
 })
-  .then(function () {
-    render('blue_button')
-  })
-  .otherwise(function () {
-    render('red_button')
-  })
+.then(function () {
+  render('blue_button')
+})
+.catch(function () {
+  render('red_button')
+})
 ```
 
 #### `rollout.handler(key, flags)`
  - `key`: `String` The rollout feature key
  - `flags`: `Object`
   - `flagname`: `String` The name of the flag. Typically `id`, `employee`, `ip`, or any other arbitrary item you would want to modify the rollout
-    - `percentage`: `NumberRange` from 0 - 100. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
+    - `percentage`:
+      - `Number` from `0` - `100`. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
+      - `Object` containing `min` and `max` keys representing a range of `Number`s between `0` - `100`
     - `condition`: `Function` a white-listing method by which you can add users into a group. See examples.
       - if `condition` returns a `Promise` (*a thenable object*), then it will use the fulfillment of the `Promise` to resolve or reject the `handler`
 
@@ -157,7 +214,10 @@ rollout.handler('admin_section', {
 
 #### `rollout.update(key, flags)`
  - `key`: `String` The rollout feature key
- - `flags`: `Object` mapping of `flagname`:`String` to `percentage`:`Number`
+ - `flags`: `Object` mapping of `flagname`:`String` to `percentage`
+   - `percentage`:
+     - `Number` from `0` - `100`. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
+     - `Object` containing `min` and `max` keys representing a range of `Number`s between `0` - `100`
  - returns `Promise`
 
 ``` js
@@ -176,17 +236,23 @@ rollout.update('new_homepage', {
   - returns `Promise`: resolves with the flags, their names, and values
 
 ``` js
-rollout.mods('new_homepage').then(function (mods) {
-  flags.employee == 100
-  flags.geo_sf == 50.000
-  flags.id == 33.333
+rollout.mods('new_homepage')
+.then(function (mods) {
+  console.assert(mods.employee == 100)
+  console.assert(mods.geo_sf == 50.000)
+  console.assert(mods.id == 33.333)
 })
 ```
 
 #### `rollout.flags()`
+  - return `Promise`: resolves with an array of configured rollout flag names
 
 ``` js
-rollout.flags() == ['new_homepage', 'other_secret_feature']
+rollout.flags()
+.then(function (flags) {
+  console.assert(flags[0] === 'new_homepage')
+  console.assert(flags[1] === 'other_secret_feature')
+})
 ```
 
 ### Tests
