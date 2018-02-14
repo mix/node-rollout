@@ -223,15 +223,39 @@ describe('rollout', function () {
       }
     })
     .then(function () {
-      var result = subject.mods('super_secret')
+      var result = subject.modifiers('super_secret')
       return Promise.all([
         expect(result).to.be.fulfilled,
-        expect(result).to.eventually.deep.equal({ foo: '12', bar: '34' })
+        expect(result).to.eventually.deep.equal({
+          foo: 12, 
+          bar: 34
+        })
       ])
     })
   })
 
-  it('can retrieve all flagnames', function () {
+  it('can retrieve range mod values', function () {
+    return subject.handler('super_secret', {
+      foo: {
+        percentage: { min: 0, max: 50 }
+      },
+      bar: {
+        percentage: { min: 50, max: 100 }
+      }
+    })
+    .then(function () {
+      var result = subject.modifiers('super_secret')
+      return Promise.all([
+        expect(result).to.be.fulfilled,
+        expect(result).to.eventually.deep.equal({
+          foo: { min: 0, max: 50 },
+          bar: { min: 50, max: 100 }
+        })
+      ])
+    })
+  })
+
+  it('can retrieve all handler names', function () {
     var o = {
       foo: {
         percentage: 100
@@ -242,7 +266,7 @@ describe('rollout', function () {
       subject.handler('huzzah', o)
     ])
     .then(function () {
-      var result = subject.flags()
+      var result = subject.handlers()
       return Promise.all([
         expect(result).to.be.fulfilled,
         expect(result).to.eventually.deep.equal(['youza', 'huzzah'])

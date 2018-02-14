@@ -10,13 +10,13 @@ function Rollout(client) {
   this._handlers = {}
 }
 
-Rollout.prototype.handler = function (key, flags) {
+Rollout.prototype.handler = function (key, modifiers) {
   var self = this
-  this._handlers[key] = flags
+  this._handlers[key] = modifiers
   var configPercentages = []
-  var configKeys = Object.keys(flags).map(function (mod) {
-    configPercentages.push(flags[mod].percentage)
-    return key + ':' + mod
+  var configKeys = Object.keys(modifiers).map(function (modName) {
+    configPercentages.push(modifiers[modName].percentage)
+    return key + ':' + modName
   })
   return getRedisKeys(this.client, configKeys)
   .then(function(persistentPercentages) {
@@ -56,35 +56,35 @@ Rollout.prototype.multi = function (keys) {
 Rollout.prototype.get = function (key, id, opt_values, multi) {
   opt_values = opt_values || { id: id }
   opt_values.id = opt_values.id || id
-  var flags = this._handlers[key]
+  var modifiers = this._handlers[key]
   var likely = this.val_to_percent(key + id)
-  var keys = Object.keys(flags).map(function (mod) {
-    return key + ':' + mod
+  var keys = Object.keys(modifiers).map(function (modName) {
+    return key + ':' + modName
   })
   return getRedisKeys(multi || this.client, keys)
   .then(function (percentages) {
     var i = 0
     var deferreds = []
     var output
-    for (var modifier in flags) {
+    for (var modName in modifiers) {
       // in the circumstance that the key is not found, default to original value
       if (percentages[i] === null) {
-        percentages[i] = normalizePercentageRange(flags[modifier].percentage)
+        percentages[i] = normalizePercentageRange(modifiers[modName].percentage)
       }
       if (isPercentageInRange(likely, percentages[i])) {
-        if (!flags[modifier].condition) {
-          flags[modifier].condition = defaultCondition
+        if (!modifiers[modName].condition) {
+          modifiers[modName].condition = defaultCondition
         }
-        output = flags[modifier].condition(opt_values[modifier])
+        output = modifiers[modName].condition(opt_values[modName])
         if (output) {
           if (typeof output.then === 'function') {
             // Normalize thenable to Bluebird Promise
             // Reflect the Promise to coalesce rejections
             output = Promise.resolve(output).reflect()
-            output.flagModifier = modifier
+            output.handlerModifier = modName
             deferreds.push(output)
           } else {
-            return modifier
+            return modName
           }
         }
       }
@@ -101,7 +101,7 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
             resultValue = resultPromise.value()
             // Treat resolved conditions with truthy values as affirmative
             if (resultValue) {
-              return resultPromise.flagModifier
+              return resultPromise.handlerModifier
             }
           }
         }
@@ -112,33 +112,33 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
   })
 }
 
-Rollout.prototype.update = function (key, updatePercentages) {
-  var persistKeys = [], mod, p
-  for (mod in updatePercentages) {
-    p = normalizePercentageRange(updatePercentages[mod])
-    persistKeys.push(key + ':' + mod, JSON.stringify(p))
+Rollout.prototype.update = function (key, modifierPercentages) {
+  var persistKeys = [], modName, p
+  for (modName in modifierPercentages) {
+    p = normalizePercentageRange(modifierPercentages[modName])
+    persistKeys.push(key + ':' + modName, JSON.stringify(p))
   }
   return setRedisKeys(this.client, persistKeys)
 }
 
-Rollout.prototype.mods = function (flagName) {
+Rollout.prototype.modifiers = function (handlerName) {
   var keys = []
   var modNames = []
-  for (var mod in this._handlers[flagName]) {
-    keys.push(flagName + ':' + mod)
-    modNames.push(mod)
+  for (var modName in this._handlers[handlerName]) {
+    keys.push(handlerName + ':' + modName)
+    modNames.push(modName)
   }
   return getRedisKeys(this.client, keys)
   .then(function (values) {
-    var flags = {}
+    var modifiers = {}
     values.forEach(function (val, i) {
-      flags[modNames[i]] = val
+      modifiers[modNames[i]] = JSON.parse(val)
     })
-    return flags
+    return modifiers
   })
 }
 
-Rollout.prototype.flags = function () {
+Rollout.prototype.handlers = function () {
   return Promise.resolve(Object.keys(this._handlers))
 }
 

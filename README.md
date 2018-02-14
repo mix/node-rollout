@@ -145,10 +145,10 @@ rollout.get('another_feature', 123, {
 ```
 
 #### `rollout.multi(keys)`
-The value of this method lets you do a batch redis call (using `redis.multi()`) allowing you to get multiple flags in one request
+The value of this method lets you do a batch redis call (using `redis.multi()`) allowing you to get multiple rollout handler results in one request
 
  - `keys`: `Array` A list of tuples containing what you would ordinarily pass to `get`
- - returns `SettlePromise`
+ - returns `Promise`
 
 ``` js
 rollout.multi([
@@ -175,15 +175,16 @@ rollout.get('another_feature', 123, {
 })
 ```
 
-#### `rollout.handler(key, flags)`
+#### `rollout.handler(key, modifiers)`
  - `key`: `String` The rollout feature key
- - `flags`: `Object`
-  - `flagname`: `String` The name of the flag. Typically `id`, `employee`, `ip`, or any other arbitrary item you would want to modify the rollout
+ - `modifiers`: `Object`
+  - `modName`: `String` The name of the modifier. Typically `id`, `employee`, `ip`, or any other arbitrary item you would want to modify the rollout
     - `percentage`:
       - `Number` from `0` - `100`. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
       - `Object` containing `min` and `max` keys representing a range of `Number`s between `0` - `100`
     - `condition`: `Function` a white-listing method by which you can add users into a group. See examples.
       - if `condition` returns a `Promise` (*a thenable object*), then it will use the fulfillment of the `Promise` to resolve or reject the `handler`
+      - Conditions will only be accepted if they return/resolve with a "truthy" value
 
 ``` js
 rollout.handler('admin_section', {
@@ -195,7 +196,7 @@ rollout.handler('admin_section', {
   employee: {
     percentage: 100,
     condition: function (val) {
-      return val.match(/@company-email\.com$/)
+      return /@company-email\.com$/.test(val)
     }
   },
   // special invited people
@@ -212,12 +213,11 @@ rollout.handler('admin_section', {
 })
 ```
 
-#### `rollout.update(key, flags)`
+#### `rollout.update(key, modifierPercentages)`
  - `key`: `String` The rollout feature key
- - `flags`: `Object` mapping of `flagname`:`String` to `percentage`
-   - `percentage`:
-     - `Number` from `0` - `100`. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
-     - `Object` containing `min` and `max` keys representing a range of `Number`s between `0` - `100`
+ - `modifierPercentages`: `Object` mapping of `modName`:`String` to `percentage`
+   - `Number` from `0` - `100`. Can be set to a third decimal place such as `0.001` or `99.999`. Or simply `0` to turn off a feature, or `100` to give a feature to all users
+   - `Object` containing `min` and `max` keys representing a range of `Number`s between `0` - `100`
  - returns `Promise`
 
 ``` js
@@ -231,27 +231,27 @@ rollout.update('new_homepage', {
 })
 ```
 
-#### `rollout.mods(flagname)`
-  - `flagname`: `String` the rollout feature key
-  - returns `Promise`: resolves with the flags, their names, and values
+#### `rollout.modifiers(handlerName)`
+  - `handlerName`: `String` the rollout feature key
+  - returns `Promise`: resolves to a modifiers `Object` mapping `modName`: `percentage`
 
 ``` js
-rollout.mods('new_homepage')
-.then(function (mods) {
-  console.assert(mods.employee == 100)
-  console.assert(mods.geo_sf == 50.000)
-  console.assert(mods.id == 33.333)
+rollout.modifiers('new_homepage')
+.then(function (modifiers) {
+  console.assert(modifiers.employee == 100)
+  console.assert(modifiers.geo_sf == 50.000)
+  console.assert(modifiers.id == 33.333)
 })
 ```
 
-#### `rollout.flags()`
-  - return `Promise`: resolves with an array of configured rollout flag names
+#### `rollout.handlers()`
+  - return `Promise`: resolves with an array of configured rollout handler names
 
 ``` js
-rollout.flags()
-.then(function (flags) {
-  console.assert(flags[0] === 'new_homepage')
-  console.assert(flags[1] === 'other_secret_feature')
+rollout.handlers()
+.then(function (handlers) {
+  console.assert(handlers[0] === 'new_homepage')
+  console.assert(handlers[1] === 'other_secret_feature')
 })
 ```
 
@@ -263,7 +263,9 @@ make test
 ```
 
 ### User Interface
-Consider using [rollout-ui](https://github.com/ded/rollout-ui) to administrate the values of your rollout flags in real-time (as opposed to doing a full deploy). It will make your life much easier and you'll be happy :)
+Consider using [rollout-ui](https://github.com/ded/rollout-ui) to administrate the values of your rollouts in real-time (as opposed to doing a full deploy). It will make your life much easier and you'll be happy :)
+
+**Note:** `rollout-ui` does not yet support experiment groups and percentage ranges.
 
 ### License MIT
 
