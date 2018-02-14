@@ -1,6 +1,6 @@
 ## Node Rollout
-[![CircleCI](https://circleci.com/gh/mix/node-rollout/tree/master.svg?style=svg)](https://circleci.com/gh/mix/node-rollout/tree/master)
-
+[![CircleCI](https://circleci.com/gh/mix/node-rollout.svg?style=svg)](https://circleci.com/gh/mix/node-rollout)
+[![Maintainability](https://api.codeclimate.com/v1/badges/1cf0304dee9b1f264a64/maintainability)](https://codeclimate.com/github/mix/node-rollout/maintainability)
 Feature rollout management for Node.js built on Redis
 
 ``` sh
