@@ -1,6 +1,5 @@
 var chai = require('chai')
   , sinon = require('sinon')
-  , v = require('valentine')
   , redis = require('redis').createClient()
   , Promise = require('bluebird')
   , promised = require('chai-as-promised')
@@ -199,6 +198,7 @@ describe('rollout', function () {
       var out = subject.get('another_feature', 123)
       return expect(out).to.be.rejected
     })
+
     it('should be able to update a key', function (done) {
       subject.val_to_percent.returns(50)
       subject.handler('button_test', {
@@ -206,27 +206,28 @@ describe('rollout', function () {
           percentage: 100
         }
       })
-      v.waterfall(
-        function (f) {
+      Promise.resolve()
+      .then(function() {
+        return new Promise(function(resolve) {
           subject.on('ready', function () {
             var out = subject.get('button_test', 123)
             expect(out).to.be.fulfilled
-            f(null)
+            resolve(null)
           })
-        },
-        function (f) {
+        })
+      })
+      .then(function () {
+        return new Promise(function(resolve) {
           subject.update('button_test', {
             id: 49
           })
-            .then(function () {
-              var out = subject.get('button_test', 123)
-              expect(out).to.be.rejected.notify(f)
-            })
-        },
-        function (err) {
-          done(err)
-        }
-      )
+          .then(function () {
+            var out = subject.get('button_test', 123)
+            expect(out).to.be.rejected.notify(resolve)
+          })
+        })
+      })
+      .then(done)
     })
 
     it('is optimistic', function (done) {
