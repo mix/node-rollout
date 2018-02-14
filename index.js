@@ -91,8 +91,13 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
         if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
         var output = flags[modifier].condition(opt_values[modifier])
         if (output) {
-          if (typeof output.then === 'function') deferreds.push(output)
-          else return true
+          if (typeof output.then === 'function') {
+            // Normalize thenable to Bluebird Promise
+            // Reflect the Promise to coalesce rejections
+            deferreds.push(Promise.resolve(output).reflect())
+          } else {
+            return true
+          }
         }
       }
       i++
@@ -100,10 +105,20 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
     if (deferreds.length) {
       return Promise.all(deferreds)
       .then(function (results) {
+        var resultPromise, resultValue
         for (var i = 0, len = results.length; i < len; i++) {
-          if (results[i]) return true
+          resultPromise = results[i]
+          // Treat rejected conditions as inapplicable modifiers
+          if (resultPromise.isFulfilled()) {
+            resultValue = resultPromise.value()
+            // Treat resolved conditions with non-false values as affirmative
+            // (This is to handle `Promise.resolve()` and `Promise.resolve(null)`)
+            if (resultValue !== false) {
+              return resultPromise.flagModifier
+            }
+          }
         }
-        return false
+        return Promise.reject()
       })
     }
     throw new Error('Not inclusive of any partition for key[' + key + '] id[' + id + ']')
