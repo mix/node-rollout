@@ -114,7 +114,7 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
             // Treat resolved conditions with non-false values as affirmative
             // (This is to handle `Promise.resolve()` and `Promise.resolve(null)`)
             if (resultValue !== false) {
-              return resultPromise.flagModifier
+              return true
             }
           }
         }
