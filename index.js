@@ -1,19 +1,14 @@
 var crypto = require('crypto')
-  , util = require('util')
-  , Promise = require('bluebird')
-  , EventEmitter = require('events').EventEmitter
+var Promise = require('bluebird')
 
 module.exports = function (client) {
   return new Rollout(client)
 }
 
 function Rollout(client) {
-  EventEmitter.call(this)
   this.client = client
   this._handlers = {}
 }
-
-util.inherits(Rollout, EventEmitter)
 
 Rollout.prototype.handler = function (key, flags) {
   var self = this
@@ -30,14 +25,16 @@ Rollout.prototype.handler = function (key, flags) {
       if (p === null) {
         p = normalizePercentageRange(configPercentages[i])
         persistKeys.push(configKeys[i], JSON.stringify(p))
+        persistentPercentages[i] = p
       }
     })
     if (persistKeys.length) {
       return setRedisKeys(self.client, persistKeys)
-      .then(function() { self.emit('ready') })
-    } else {
-      self.emit('ready')
+      .then(function() {
+        return persistentPercentages
+      })
     }
+    return persistentPercentages
   })
 }
 
@@ -142,7 +139,7 @@ Rollout.prototype.mods = function (flagName) {
 }
 
 Rollout.prototype.flags = function () {
-  return Object.keys(this._handlers)
+  return Promise.resolve(Object.keys(this._handlers))
 }
 
 Rollout.prototype.val_to_percent = function (text) {
