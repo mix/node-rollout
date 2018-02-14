@@ -102,10 +102,9 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
           // Treat rejected conditions as inapplicable modifiers
           if (resultPromise.isFulfilled()) {
             resultValue = resultPromise.value()
-            // Treat resolved conditions with non-false values as affirmative
-            // (This is to handle `Promise.resolve()` and `Promise.resolve(null)`)
-            if (resultValue !== false) {
-              return true
+            // Treat resolved conditions with truthy values as affirmative
+            if (resultValue) {
+              return resultPromise.flagModifier
             }
           }
         }
