@@ -3,10 +3,6 @@ var crypto = require('crypto')
   , Promise = require('bluebird')
   , EventEmitter = require('events').EventEmitter
 
-function defaultCondition() {
-  return true
-}
-
 module.exports = function (client) {
   return new Rollout(client)
 }
@@ -22,25 +18,23 @@ util.inherits(Rollout, EventEmitter)
 Rollout.prototype.handler = function (key, flags) {
   var self = this
   this._handlers[key] = flags
-  var orig_percentages = []
-  var keys = Object.keys(flags).map(function (k) {
-    orig_percentages.push(flags[k].percentage)
-    return key + ':' + k
+  var configPercentages = []
+  var configKeys = Object.keys(flags).map(function (mod) {
+    configPercentages.push(flags[mod].percentage)
+    return key + ':' + mod
   })
-  this.client.mget(keys, function (err, percentages) {
-    var _keys = []
-    var nullKey = false
-    percentages.forEach(function (p, i) {
+  return getRedisKeys(this.client, configKeys)
+  .then(function(persistentPercentages) {
+    var persistKeys = []
+    persistentPercentages.forEach(function (p, i) {
       if (p === null) {
-        var val = Math.max(0, Math.min(100, orig_percentages[i] || 0))
-        nullKey = true
-        _keys.push(keys[i], val)
+        var val = clampPercentage(configPercentages[i])
+        persistKeys.push(configKeys[i], val)
       }
     })
-    if (nullKey) {
-      self.client.mset(_keys, function () {
-        self.emit('ready')
-      })
+    if (persistKeys.length) {
+      return setRedisKeys(self.client, persistKeys)
+      .then(function() { self.emit('ready') })
     } else {
       self.emit('ready')
     }
@@ -49,47 +43,42 @@ Rollout.prototype.handler = function (key, flags) {
 
 Rollout.prototype.multi = function (keys) {
   var multi = this.client.multi()
+  // Accumulate get calls into a single "multi" query
   var promises = keys.map(function (k) {
     return this.get(k[0], k[1], k[2], multi).reflect()
   }.bind(this))
+  // Perform the batch query
   return new Promise(function (resolve, reject) {
-    multi.exec(function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
-    })
+    multi.exec(promiseCallback(resolve, reject))
   })
-  .then(Promise.all.bind(Promise, promises))
+  .then(function () {
+    return Promise.all(promises)
+  })
 }
 
 Rollout.prototype.get = function (key, id, opt_values, multi) {
+  opt_values = opt_values || { id: id }
+  opt_values.id = opt_values.id || id
   var flags = this._handlers[key]
   var likely = this.val_to_percent(key + id)
-  var _id = {
-    id: id
-  }
-  if (!opt_values) opt_values = _id
-  if (!opt_values.id) opt_values.id = id
-  var keys = Object.keys(flags).map(function (k) {
-    return key + ':' + k
+  var keys = Object.keys(flags).map(function (mod) {
+    return key + ':' + mod
   })
-  var client = multi || this.client
-  return new Promise(function (resolve, reject) {
-    client.mget(keys, function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
-    })
-  })
+  return getRedisKeys(multi || this.client, keys)
   .then(function (percentages) {
     var i = 0
     var deferreds = []
+    var output
     for (var modifier in flags) {
       // in the circumstance that the key is not found, default to original value
       if (percentages[i] === null) {
         percentages[i] = flags[modifier].percentage
       }
       if (likely < percentages[i]) {
-        if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
-        var output = flags[modifier].condition(opt_values[modifier])
+        if (!flags[modifier].condition) {
+          flags[modifier].condition = defaultCondition
+        }
+        output = flags[modifier].condition(opt_values[modifier])
         if (output) {
           if (typeof output.then === 'function') {
             // Normalize thenable to Bluebird Promise
@@ -122,7 +111,7 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
       })
     }
     throw new Error('Not inclusive of any partition for key[' + key + '] id[' + id + ']')
-  }.bind(this))
+  })
 }
 
 Rollout.prototype.update = function (key, percentage_map) {
@@ -130,34 +119,24 @@ Rollout.prototype.update = function (key, percentage_map) {
   for (var k in percentage_map) {
     keys.push(key + ':' + k, percentage_map[k])
   }
-  return new Promise(function (resolve, reject) {
-    this.client.mset(keys, function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
-    })
-  }.bind(this))
+  return setRedisKeys(this.client, keys)
 }
 
-Rollout.prototype.mods = function (name) {
+Rollout.prototype.mods = function (flagName) {
   var keys = []
-  var names = []
-  for (var flag in this._handlers[name]) {
-    keys.push(name + ':' + flag)
-    names.push(flag)
+  var modNames = []
+  for (var mod in this._handlers[flagName]) {
+    keys.push(flagName + ':' + mod)
+    modNames.push(mod)
   }
-  return new Promise(function (resolve, reject) {
-    this.client.mget(keys, function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
+  return getRedisKeys(this.client, keys)
+  .then(function (values) {
+    var flags = {}
+    values.forEach(function (val, i) {
+      flags[modNames[i]] = val
     })
-  }.bind(this))
-    .then(function (values) {
-      var flags = {}
-      values.forEach(function (val, i) {
-        flags[names[i]] = val
-      })
-      return flags
-    })
+    return flags
+  })
 }
 
 Rollout.prototype.flags = function () {
@@ -168,4 +147,33 @@ Rollout.prototype.val_to_percent = function (text) {
   var n = crypto.createHash('md5').update(text).digest('hex')
   n = n.slice(0, n.length/2)
   return parseInt(n, 16) / parseInt(n.split('').map(function () { return 'f' }).join(''), 16) * 100
+}
+
+function defaultCondition() {
+  return true
+}
+
+function clampPercentage(val) {
+  return Math.max(0, Math.min(100, +(val || 0)))
+}
+
+function getRedisKeys(client, keys) {
+  return new Promise(function (resolve, reject) {
+    client.mget(keys, promiseCallback(resolve, reject))
+  })
+}
+
+function setRedisKeys(client, keys) {
+  return new Promise(function (resolve, reject) {
+    client.mset(keys, promiseCallback(resolve, reject))
+  })
+}
+
+function promiseCallback(resolve, reject) {
+  return function (err, result) {
+    if (err) {
+      return reject(err)
+    }
+    resolve(result)
+  }
 }
