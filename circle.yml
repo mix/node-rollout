@@ -1,6 +1,0 @@
-machine:
-  services:
-    - redis
-dependencies:
-  post:
-    - make lint-ci
