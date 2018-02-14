@@ -28,8 +28,8 @@ Rollout.prototype.handler = function (key, flags) {
     var persistKeys = []
     persistentPercentages.forEach(function (p, i) {
       if (p === null) {
-        var val = clampPercentage(configPercentages[i])
-        persistKeys.push(configKeys[i], val)
+        p = normalizePercentageRange(configPercentages[i])
+        persistKeys.push(configKeys[i], JSON.stringify(p))
       }
     })
     if (persistKeys.length) {
@@ -72,9 +72,9 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
     for (var modifier in flags) {
       // in the circumstance that the key is not found, default to original value
       if (percentages[i] === null) {
-        percentages[i] = flags[modifier].percentage
+        percentages[i] = normalizePercentageRange(flags[modifier].percentage)
       }
-      if (likely < percentages[i]) {
+      if (isPercentageInRange(likely, percentages[i])) {
         if (!flags[modifier].condition) {
           flags[modifier].condition = defaultCondition
         }
@@ -116,12 +116,13 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
   })
 }
 
-Rollout.prototype.update = function (key, percentage_map) {
-  var keys = []
-  for (var k in percentage_map) {
-    keys.push(key + ':' + k, percentage_map[k])
+Rollout.prototype.update = function (key, updatePercentages) {
+  var persistKeys = [], mod, p
+  for (mod in updatePercentages) {
+    p = normalizePercentageRange(updatePercentages[mod])
+    persistKeys.push(key + ':' + mod, JSON.stringify(p))
   }
-  return setRedisKeys(this.client, keys)
+  return setRedisKeys(this.client, persistKeys)
 }
 
 Rollout.prototype.mods = function (flagName) {
@@ -157,6 +158,27 @@ function defaultCondition() {
 
 function clampPercentage(val) {
   return Math.max(0, Math.min(100, +(val || 0)))
+}
+
+function normalizePercentageRange(val) {
+  if (val && typeof val === 'object') {
+    return {
+      min: clampPercentage(val.min),
+      max: clampPercentage(val.max)
+    }
+  }
+  return clampPercentage(val)
+}
+
+function isPercentageInRange(val, range) {
+  // Redis stringifies everything, so ranges must be reified
+  if (typeof range === 'string') {
+    range = JSON.parse(range)
+  }
+  if (range && typeof range === 'object') {
+    return val > range.min && val <= range.max
+  }
+  return val < range
 }
 
 function getRedisKeys(client, keys) {

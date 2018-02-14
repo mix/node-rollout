@@ -53,6 +53,52 @@ describe('rollout', function () {
     expect(result).to.eventually.equal('employee')
   })
 
+  context('percentage range', function () {
+    beforeEach(function () {
+      sinon.stub(subject, 'val_to_percent')
+      subject.handler('secret_feature', {
+        groupA: {
+          percentage: { min: 0, max: 25 }
+        },
+        groupB: {
+          percentage: { min: 25, max: 50 }
+        },
+        groupC: {
+          percentage: { min: 50, max: 100 }
+        }
+      })
+    })
+    afterEach(function () {
+      subject.val_to_percent.restore()
+    })
+
+    it('fulfills with applicable modifier for range', function () {
+      subject.val_to_percent.onCall(0).returns(37)
+      var result = subject.get('secret_feature', 123)
+      expect(result).to.be.fulfilled
+      expect(result).to.eventually.equal('groupB')
+    })
+
+    it('fulfills multiple with applicable modifiers for ranges', function () {
+      subject.val_to_percent.onCall(0).returns(12)
+      subject.val_to_percent.onCall(1).returns(49.97)
+      subject.val_to_percent.onCall(2).returns(72)
+      return subject.multi([
+        ['secret_feature', 123],
+        ['secret_feature', 321],
+        ['secret_feature', 213]
+      ])
+      .then(function(results) {
+        expect(results[0].isFulfilled()).to.be.true
+        expect(results[0].value()).to.equal('groupA')
+        expect(results[1].isFulfilled()).to.be.true
+        expect(results[1].value()).to.equal('groupB')
+        expect(results[2].isFulfilled()).to.be.true
+        expect(results[2].value()).to.equal('groupC')
+      })
+    })
+  })
+
   it('fulfills when condition returns a resolved promise', function () {
     subject.handler('promise_secret_feature', {
       beta_testa: {
