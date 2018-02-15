@@ -1,102 +1,90 @@
 var crypto = require('crypto')
-  , util = require('util')
-  , Promise = require('bluebird')
-  , EventEmitter = require('events').EventEmitter
-
-function defaultCondition() {
-  return true
-}
+var Promise = require('bluebird')
 
 module.exports = function (client) {
   return new Rollout(client)
 }
 
 function Rollout(client) {
-  EventEmitter.call(this)
   this.client = client
   this._handlers = {}
 }
 
-util.inherits(Rollout, EventEmitter)
-
-Rollout.prototype.handler = function (key, flags) {
+Rollout.prototype.handler = function (key, modifiers) {
   var self = this
-  this._handlers[key] = flags
-  var orig_percentages = []
-  var keys = Object.keys(flags).map(function (k) {
-    orig_percentages.push(flags[k].percentage)
-    return key + ':' + k
+  this._handlers[key] = modifiers
+  var configPercentages = []
+  var configKeys = Object.keys(modifiers).map(function (modName) {
+    configPercentages.push(modifiers[modName].percentage)
+    return key + ':' + modName
   })
-  this.client.mget(keys, function (err, percentages) {
-    var _keys = []
-    var nullKey = false
-    percentages.forEach(function (p, i) {
+  return getRedisKeys(this.client, configKeys)
+  .then(function(persistentPercentages) {
+    var persistKeys = []
+    persistentPercentages.forEach(function (p, i) {
       if (p === null) {
-        var val = Math.max(0, Math.min(100, orig_percentages[i] || 0))
-        nullKey = true
-        _keys.push(keys[i], val)
+        p = normalizePercentageRange(configPercentages[i])
+        persistKeys.push(configKeys[i], JSON.stringify(p))
+        persistentPercentages[i] = p
       }
     })
-    if (nullKey) {
-      self.client.mset(_keys, function () {
-        self.emit('ready')
+    if (persistKeys.length) {
+      return setRedisKeys(self.client, persistKeys)
+      .then(function() {
+        return persistentPercentages
       })
-    } else {
-      self.emit('ready')
     }
+    return persistentPercentages
   })
 }
 
 Rollout.prototype.multi = function (keys) {
   var multi = this.client.multi()
+  // Accumulate get calls into a single "multi" query
   var promises = keys.map(function (k) {
     return this.get(k[0], k[1], k[2], multi).reflect()
   }.bind(this))
+  // Perform the batch query
   return new Promise(function (resolve, reject) {
-    multi.exec(function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
-    })
+    multi.exec(promiseCallback(resolve, reject))
   })
-  .then(Promise.all.bind(Promise, promises))
+  .then(function () {
+    return Promise.all(promises)
+  })
 }
 
 Rollout.prototype.get = function (key, id, opt_values, multi) {
-  var flags = this._handlers[key]
+  opt_values = opt_values || { id: id }
+  opt_values.id = opt_values.id || id
+  var modifiers = this._handlers[key]
   var likely = this.val_to_percent(key + id)
-  var _id = {
-    id: id
-  }
-  if (!opt_values) opt_values = _id
-  if (!opt_values.id) opt_values.id = id
-  var keys = Object.keys(flags).map(function (k) {
-    return key + ':' + k
+  var keys = Object.keys(modifiers).map(function (modName) {
+    return key + ':' + modName
   })
-  var client = multi || this.client
-  return new Promise(function (resolve, reject) {
-    client.mget(keys, function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
-    })
-  })
+  return getRedisKeys(multi || this.client, keys)
   .then(function (percentages) {
     var i = 0
     var deferreds = []
-    for (var modifier in flags) {
+    var output
+    for (var modName in modifiers) {
       // in the circumstance that the key is not found, default to original value
       if (percentages[i] === null) {
-        percentages[i] = flags[modifier].percentage
+        percentages[i] = normalizePercentageRange(modifiers[modName].percentage)
       }
-      if (likely < percentages[i]) {
-        if (!flags[modifier].condition) flags[modifier].condition = defaultCondition
-        var output = flags[modifier].condition(opt_values[modifier])
+      if (isPercentageInRange(likely, percentages[i])) {
+        if (!modifiers[modName].condition) {
+          modifiers[modName].condition = defaultCondition
+        }
+        output = modifiers[modName].condition(opt_values[modName])
         if (output) {
           if (typeof output.then === 'function') {
             // Normalize thenable to Bluebird Promise
             // Reflect the Promise to coalesce rejections
-            deferreds.push(Promise.resolve(output).reflect())
+            output = Promise.resolve(output).reflect()
+            output.handlerModifier = modName
+            deferreds.push(output)
           } else {
-            return true
+            return modName
           }
         }
       }
@@ -111,10 +99,9 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
           // Treat rejected conditions as inapplicable modifiers
           if (resultPromise.isFulfilled()) {
             resultValue = resultPromise.value()
-            // Treat resolved conditions with non-false values as affirmative
-            // (This is to handle `Promise.resolve()` and `Promise.resolve(null)`)
-            if (resultValue !== false) {
-              return true
+            // Treat resolved conditions with truthy values as affirmative
+            if (resultValue) {
+              return resultPromise.handlerModifier
             }
           }
         }
@@ -122,50 +109,91 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
       })
     }
     throw new Error('Not inclusive of any partition for key[' + key + '] id[' + id + ']')
-  }.bind(this))
+  })
 }
 
-Rollout.prototype.update = function (key, percentage_map) {
-  var keys = []
-  for (var k in percentage_map) {
-    keys.push(key + ':' + k, percentage_map[k])
+Rollout.prototype.update = function (key, modifierPercentages) {
+  var persistKeys = [], modName, p
+  for (modName in modifierPercentages) {
+    p = normalizePercentageRange(modifierPercentages[modName])
+    persistKeys.push(key + ':' + modName, JSON.stringify(p))
   }
-  return new Promise(function (resolve, reject) {
-    this.client.mset(keys, function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
-    })
-  }.bind(this))
+  return setRedisKeys(this.client, persistKeys)
 }
 
-Rollout.prototype.mods = function (name) {
+Rollout.prototype.modifiers = function (handlerName) {
   var keys = []
-  var names = []
-  for (var flag in this._handlers[name]) {
-    keys.push(name + ':' + flag)
-    names.push(flag)
+  var modNames = []
+  for (var modName in this._handlers[handlerName]) {
+    keys.push(handlerName + ':' + modName)
+    modNames.push(modName)
   }
-  return new Promise(function (resolve, reject) {
-    this.client.mget(keys, function (err, result) {
-      if (err) return reject(err)
-      resolve(result)
+  return getRedisKeys(this.client, keys)
+  .then(function (values) {
+    var modifiers = {}
+    values.forEach(function (val, i) {
+      modifiers[modNames[i]] = JSON.parse(val)
     })
-  }.bind(this))
-    .then(function (values) {
-      var flags = {}
-      values.forEach(function (val, i) {
-        flags[names[i]] = val
-      })
-      return flags
-    })
+    return modifiers
+  })
 }
 
-Rollout.prototype.flags = function () {
-  return Object.keys(this._handlers)
+Rollout.prototype.handlers = function () {
+  return Promise.resolve(Object.keys(this._handlers))
 }
 
 Rollout.prototype.val_to_percent = function (text) {
   var n = crypto.createHash('md5').update(text).digest('hex')
   n = n.slice(0, n.length/2)
   return parseInt(n, 16) / parseInt(n.split('').map(function () { return 'f' }).join(''), 16) * 100
+}
+
+function defaultCondition() {
+  return true
+}
+
+function clampPercentage(val) {
+  return Math.max(0, Math.min(100, +(val || 0)))
+}
+
+function normalizePercentageRange(val) {
+  if (val && typeof val === 'object') {
+    return {
+      min: clampPercentage(val.min),
+      max: clampPercentage(val.max)
+    }
+  }
+  return clampPercentage(val)
+}
+
+function isPercentageInRange(val, range) {
+  // Redis stringifies everything, so ranges must be reified
+  if (typeof range === 'string') {
+    range = JSON.parse(range)
+  }
+  if (range && typeof range === 'object') {
+    return val > range.min && val <= range.max
+  }
+  return val < range
+}
+
+function getRedisKeys(client, keys) {
+  return new Promise(function (resolve, reject) {
+    client.mget(keys, promiseCallback(resolve, reject))
+  })
+}
+
+function setRedisKeys(client, keys) {
+  return new Promise(function (resolve, reject) {
+    client.mset(keys, promiseCallback(resolve, reject))
+  })
+}
+
+function promiseCallback(resolve, reject) {
+  return function (err, result) {
+    if (err) {
+      return reject(err)
+    }
+    resolve(result)
+  }
 }

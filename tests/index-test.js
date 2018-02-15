@@ -25,35 +25,104 @@ describe('rollout', function () {
   })
 
   it('fulfills', function () {
-    subject.handler('secret_feature', {
+    return subject.handler('secret_feature', {
       employee: {
         percentage: 100,
         condition: isCompanyEmail
       }
     })
-    return expect(subject.get('secret_feature', 123, {
-      employee: 'me@company.com'
-    })).to.be.fulfilled
+    .then(function () {
+      var result = subject.get('secret_feature', 123, {
+        employee: 'me@company.com'
+      })
+      return expect(result).to.be.fulfilled
+    })
+  })
+
+  it('fulfills with applicable modifier for percentage', function () {
+    return subject.handler('secret_feature', {
+      everyone: {
+        percentage: 0
+      },
+      employee: {
+        percentage: 100,
+        condition: isCompanyEmail
+      }
+    })
+    .then(function () {
+      var result = subject.get('secret_feature', 123, {
+        employee: 'me@company.com'
+      })
+      return expect(result).to.eventually.equal('employee')
+    })
+  })
+
+  context('percentage range', function () {
+    beforeEach(function () {
+      sinon.stub(subject, 'val_to_percent')
+      return subject.handler('secret_feature', {
+        groupA: {
+          percentage: { min: 0, max: 25 }
+        },
+        groupB: {
+          percentage: { min: 25, max: 50 }
+        },
+        groupC: {
+          percentage: { min: 50, max: 100 }
+        }
+      })
+    })
+    afterEach(function () {
+      subject.val_to_percent.restore()
+    })
+
+    it('fulfills with applicable modifier for range', function () {
+      subject.val_to_percent.onCall(0).returns(37)
+      var result = subject.get('secret_feature', 123)
+      return expect(result).to.eventually.equal('groupB')
+    })
+
+    it('fulfills multiple with applicable modifiers for ranges', function () {
+      subject.val_to_percent.onCall(0).returns(12)
+      subject.val_to_percent.onCall(1).returns(49.97)
+      subject.val_to_percent.onCall(2).returns(72)
+      return subject.multi([
+        ['secret_feature', 123],
+        ['secret_feature', 321],
+        ['secret_feature', 213]
+      ])
+      .then(function(results) {
+        expect(results[0].isFulfilled()).to.be.true
+        expect(results[0].value()).to.equal('groupA')
+        expect(results[1].isFulfilled()).to.be.true
+        expect(results[1].value()).to.equal('groupB')
+        expect(results[2].isFulfilled()).to.be.true
+        expect(results[2].value()).to.equal('groupC')
+      })
+    })
   })
 
   it('fulfills when condition returns a resolved promise', function () {
-    subject.handler('promise_secret_feature', {
+    return subject.handler('promise_secret_feature', {
       beta_testa: {
         percentage: 100,
         condition: function () {
           return new Promise(function (resolve) {
-            setTimeout(resolve, 10)
+            setTimeout(resolve.bind(null, true), 10)
           })
         }
       }
     })
-    return expect(subject.get('promise_secret_feature', 123, {
-      beta_testa: 'foo'
-    })).to.be.fulfilled
+    .then(function () {
+      var result = subject.get('promise_secret_feature', 123, {
+        beta_testa: 'foo'
+      })
+      return expect(result).to.be.fulfilled
+    })
   })
 
   it('rejects when condition returns a rejected promise', function () {
-    subject.handler('promise_secret_feature', {
+    return subject.handler('promise_secret_feature', {
       beta_testa: {
         percentage: 100,
         condition: function () {
@@ -61,23 +130,26 @@ describe('rollout', function () {
         }
       }
     })
-    return expect(subject.get('promise_secret_feature', 123, {
-      beta_testa: 'foo'
-    })).to.be.rejected
+    .then(function () {
+      var result = subject.get('promise_secret_feature', 123, {
+        beta_testa: 'foo'
+      })
+      return expect(result).to.be.rejected
+    })
   })
 
   it('fulfills if `any` condition passes', function () {
-    subject.handler('mixed_secret_feature', {
+    return subject.handler('mixed_secret_feature', {
       beta_testa: {
         percentage: 100,
         condition: function () {
-          return Promise.resolve()
+          return Promise.resolve(true)
         }
       },
       beta_testa1: {
         percentage: 0,
         condition: function () {
-          return Promise.resolve()
+          return Promise.resolve(true)
         }
       },
       beta_testa2: {
@@ -93,21 +165,23 @@ describe('rollout', function () {
         }
       }
     })
-
-    return expect(subject.get('mixed_secret_feature', 123, {
-      beta_testa: 'foo',
-      beta_testa1: 'foo',
-      beta_testa2: 'foo',
-      beta_testa3: 'foo'
-    })).to.be.fulfilled
+    .then(function () {
+      var result = subject.get('mixed_secret_feature', 123, {
+        beta_testa: 'foo',
+        beta_testa1: 'foo',
+        beta_testa2: 'foo',
+        beta_testa3: 'foo'
+      })
+      return expect(result).to.be.fulfilled
+    })
   })
 
   it('rejects if all conditions fail', function () {
-    subject.handler('mixed_secret_feature', {
+    return subject.handler('mixed_secret_feature', {
       beta_testa1: {
         percentage: 0,
         condition: function () {
-          return Promise.resolve()
+          return Promise.resolve(true)
         }
       },
       beta_testa2: {
@@ -123,16 +197,18 @@ describe('rollout', function () {
         }
       }
     })
-
-    return expect(subject.get('mixed_secret_feature', 123, {
-      beta_testa1: 'foo',
-      beta_testa2: 'foo',
-      beta_testa3: 'foo'
-    })).to.be.rejected
+    .then(function () {
+      var result = subject.get('mixed_secret_feature', 123, {
+        beta_testa1: 'foo',
+        beta_testa2: 'foo',
+        beta_testa3: 'foo'
+      })
+      return expect(result).to.be.rejected
+    })
   })
 
-  it('can retrieve all mod values', function (done) {
-    subject.handler('super_secret', {
+  it('can retrieve percentage mod values', function () {
+    return subject.handler('super_secret', {
       foo: {
         percentage: 12
       },
@@ -140,34 +216,55 @@ describe('rollout', function () {
         percentage: 34
       }
     })
-    subject.on('ready', function () {
-      subject.mods('super_secret').then(function (mods) {
-        expect(mods).to.deep.equal({foo: '12', bar: '34'})
-        done()
+    .then(function () {
+      var result = subject.modifiers('super_secret')
+      return expect(result).to.eventually.deep.equal({
+        foo: 12,
+        bar: 34
       })
     })
   })
 
-  it('can retrieve all flagnames', function () {
+  it('can retrieve range mod values', function () {
+    return subject.handler('super_secret', {
+      foo: {
+        percentage: { min: 0, max: 50 }
+      },
+      bar: {
+        percentage: { min: 50, max: 100 }
+      }
+    })
+    .then(function () {
+      var result = subject.modifiers('super_secret')
+      return expect(result).to.eventually.deep.equal({
+        foo: { min: 0, max: 50 },
+        bar: { min: 50, max: 100 }
+      })
+    })
+  })
+
+  it('can retrieve all handler names', function () {
     var o = {
       foo: {
         percentage: 100
       }
     }
-    subject.handler('youza', o)
-    subject.handler('huzzah', o)
-    expect(subject.flags()).to.deep.equal(['youza', 'huzzah'])
+    return Promise.all([
+      subject.handler('youza', o),
+      subject.handler('huzzah', o)
+    ])
+    .then(function () {
+      var result = subject.handlers()
+      return expect(result).to.eventually.deep.equal(['youza', 'huzzah'])
+    })
   })
 
   it('gets multiple keys', function () {
-    subject.handler('secret_feature', {
+    return subject.handler('secret_feature', {
       employee: {
         percentage: 100,
         condition: isCompanyEmail
       }
-    })
-    return subject.get('secret_feature', 123, {
-      employee: 'me@company.com'
     })
     .then(function () {
       return subject.multi([
@@ -177,9 +274,9 @@ describe('rollout', function () {
       ])
       .then(function (result) {
         expect(result[0].isFulfilled()).to.be.true
-        expect(result[0].value()).to.be.true
+        expect(result[0].value()).to.equal('employee')
         expect(result[1].isFulfilled()).to.be.true
-        expect(result[1].value()).to.be.true
+        expect(result[1].value()).to.equal('employee')
         expect(result[2].isRejected()).to.be.true
       })
     })
@@ -195,50 +292,68 @@ describe('rollout', function () {
 
     it('rejects if not in allowed percentage', function () {
       subject.val_to_percent.returns(51.001)
-      subject.handler('another_feature', {
+      return subject.handler('another_feature', {
         id: {
           percentage: 51.000
         }
       })
-      var out = subject.get('another_feature', 123)
-      return expect(out).to.be.rejected
+      .then(function () {
+        var result = subject.get('another_feature', 123)
+        return expect(result).to.be.rejected
+      })
     })
 
-    it('should be able to update a key', function (done) {
+    it('should be able to update a key with a percentage', function () {
       subject.val_to_percent.returns(50)
-      subject.handler('button_test', {
+      return subject.handler('button_test', {
         id: {
           percentage: 100
         }
       })
-      Promise.resolve()
       .then(function() {
-        return new Promise(function(resolve) {
-          subject.on('ready', function () {
-            var out = subject.get('button_test', 123)
-            expect(out).to.be.fulfilled
-            resolve(null)
-          })
-        })
+        var result = subject.get('button_test', 123)
+        return expect(result).to.be.fulfilled
       })
       .then(function () {
-        return new Promise(function(resolve) {
-          subject.update('button_test', {
-            id: 49
-          })
-          .then(function () {
-            var out = subject.get('button_test', 123)
-            expect(out).to.be.rejected.notify(resolve)
-          })
+        return subject.update('button_test', {
+          id: 49
+        })
+        .then(function () {
+          var result = subject.get('button_test', 123)
+          return expect(result).to.be.rejected
         })
       })
-      .then(done)
     })
 
-    it('is optimistic', function (done) {
-      subject.val_to_percent.returns(49)
+    it('should be able to update a key with a range', function () {
+      subject.val_to_percent.returns(50)
+      return subject.handler('experiment', {
+        groupA: {
+          percentage: 100
+        },
+        groupB: {
+          percentage: 0
+        }
+      })
+      .then(function() {
+        var result = subject.get('experiment', 123)
+        return expect(result).to.eventually.equal('groupA')
+      })
+      .then(function () {
+        return subject.update('experiment', {
+          groupA: { min: 0, max: 49 },
+          groupB: { min: 49, max: 100 }
+        })
+        .then(function () {
+          var result = subject.get('experiment', 123)
+          return expect(result).to.eventually.equal('groupB')
+        })
+      })
+    })
 
-      subject.handler('super_secret', {
+    it('is optimistic', function () {
+      subject.val_to_percent.returns(49)
+      return subject.handler('super_secret', {
         id: {
           // give feature to 49% of users
           percentage: 50
@@ -249,13 +364,12 @@ describe('rollout', function () {
           condition: isCompanyEmail
         }
       })
-
-      subject.on('ready', function () {
-        var out = subject.get('super_secret', 123, {
+      .then(function () {
+        var result = subject.get('super_secret', 123, {
           employee: 'regular@gmail.com'
         })
         // is rejected by company email, but falls within allowed regular users
-        expect(out).to.be.fulfilled.notify(done)
+        return expect(result).to.eventually.equal('id')
       })
     })
   })
