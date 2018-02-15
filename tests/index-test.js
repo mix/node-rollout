@@ -53,10 +53,7 @@ describe('rollout', function () {
       var result = subject.get('secret_feature', 123, {
         employee: 'me@company.com'
       })
-      return Promise.all([
-        expect(result).to.be.fulfilled,
-        expect(result).to.eventually.equal('employee')
-      ])
+      return expect(result).to.eventually.equal('employee')
     })
   })
 
@@ -82,10 +79,7 @@ describe('rollout', function () {
     it('fulfills with applicable modifier for range', function () {
       subject.val_to_percent.onCall(0).returns(37)
       var result = subject.get('secret_feature', 123)
-      return Promise.all([
-        expect(result).to.be.fulfilled,
-        expect(result).to.eventually.equal('groupB')
-      ])
+      return expect(result).to.eventually.equal('groupB')
     })
 
     it('fulfills multiple with applicable modifiers for ranges', function () {
@@ -224,13 +218,10 @@ describe('rollout', function () {
     })
     .then(function () {
       var result = subject.modifiers('super_secret')
-      return Promise.all([
-        expect(result).to.be.fulfilled,
-        expect(result).to.eventually.deep.equal({
-          foo: 12, 
-          bar: 34
-        })
-      ])
+      return expect(result).to.eventually.deep.equal({
+        foo: 12,
+        bar: 34
+      })
     })
   })
 
@@ -245,13 +236,10 @@ describe('rollout', function () {
     })
     .then(function () {
       var result = subject.modifiers('super_secret')
-      return Promise.all([
-        expect(result).to.be.fulfilled,
-        expect(result).to.eventually.deep.equal({
-          foo: { min: 0, max: 50 },
-          bar: { min: 50, max: 100 }
-        })
-      ])
+      return expect(result).to.eventually.deep.equal({
+        foo: { min: 0, max: 50 },
+        bar: { min: 50, max: 100 }
+      })
     })
   })
 
@@ -267,10 +255,7 @@ describe('rollout', function () {
     ])
     .then(function () {
       var result = subject.handlers()
-      return Promise.all([
-        expect(result).to.be.fulfilled,
-        expect(result).to.eventually.deep.equal(['youza', 'huzzah'])
-      ])
+      return expect(result).to.eventually.deep.equal(['youza', 'huzzah'])
     })
   })
 
@@ -352,10 +337,7 @@ describe('rollout', function () {
       })
       .then(function() {
         var result = subject.get('experiment', 123)
-        return Promise.all([
-          expect(result).to.be.fulfilled,
-          expect(result).to.eventually.equal('groupA')
-        ])
+        return expect(result).to.eventually.equal('groupA')
       })
       .then(function () {
         return subject.update('experiment', {
@@ -364,10 +346,7 @@ describe('rollout', function () {
         })
         .then(function () {
           var result = subject.get('experiment', 123)
-          return Promise.all([
-            expect(result).to.be.fulfilled,
-            expect(result).to.eventually.equal('groupB')
-          ])
+          return expect(result).to.eventually.equal('groupB')
         })
       })
     })
@@ -390,7 +369,7 @@ describe('rollout', function () {
           employee: 'regular@gmail.com'
         })
         // is rejected by company email, but falls within allowed regular users
-        return expect(result).to.be.fulfilled
+        return expect(result).to.eventually.equal('id')
       })
     })
   })
