@@ -66,12 +66,18 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
     var i = 0
     var deferreds = []
     var output
+    var percentage
     for (var modName in modifiers) {
-      // in the circumstance that the key is not found, default to original value
-      if (percentages[i] === null) {
-        percentages[i] = normalizePercentageRange(modifiers[modName].percentage)
+      percentage = percentages[i++]
+      // Redis stringifies everything, so ranges must be reified
+      if (typeof percentage === 'string') {
+        percentage = JSON.parse(percentage)
       }
-      if (isPercentageInRange(likely, percentages[i])) {
+      // in the circumstance that the key is not found, default to original value
+      if (percentage === null) {
+        percentage = normalizePercentageRange(modifiers[modName].percentage)
+      }
+      if (isPercentageInRange(likely, percentage)) {
         if (!modifiers[modName].condition) {
           modifiers[modName].condition = defaultCondition
         }
@@ -88,7 +94,6 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
           }
         }
       }
-      i++
     }
     if (deferreds.length) {
       return Promise.all(deferreds)
@@ -113,28 +118,43 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
 }
 
 Rollout.prototype.update = function (key, modifierPercentages) {
-  var persistKeys = [], modName, p
+  var persistKeys = []
+  var modName
+  var percentage
   for (modName in modifierPercentages) {
-    p = normalizePercentageRange(modifierPercentages[modName])
-    persistKeys.push(key + ':' + modName, JSON.stringify(p))
+    percentage = normalizePercentageRange(modifierPercentages[modName])
+    persistKeys.push(key + ':' + modName, JSON.stringify(percentage))
   }
   return setRedisKeys(this.client, persistKeys)
 }
 
 Rollout.prototype.modifiers = function (handlerName) {
+  var modifiers = this._handlers[handlerName]
   var keys = []
   var modNames = []
-  for (var modName in this._handlers[handlerName]) {
+  var modName
+  for (modName in modifiers) {
     keys.push(handlerName + ':' + modName)
     modNames.push(modName)
   }
   return getRedisKeys(this.client, keys)
-  .then(function (values) {
-    var modifiers = {}
-    values.forEach(function (val, i) {
-      modifiers[modNames[i]] = JSON.parse(val)
-    })
-    return modifiers
+  .then(function (percentages) {
+    var modPercentages = {}
+    var i = 0
+    var percentage
+    for (modName in modifiers) {
+      percentage = percentages[i++]
+      // Redis stringifies everything, so ranges must be reified
+      if (typeof percentage === 'string') {
+        percentage = JSON.parse(percentage)
+      }
+      // in the circumstance that the key is not found, default to original value
+      if (percentage === null) {
+        percentage = normalizePercentageRange(modifiers[modName].percentage)
+      }
+      modPercentages[modName] = percentage
+    }
+    return modPercentages
   })
 }
 
@@ -167,10 +187,6 @@ function normalizePercentageRange(val) {
 }
 
 function isPercentageInRange(val, range) {
-  // Redis stringifies everything, so ranges must be reified
-  if (typeof range === 'string') {
-    range = JSON.parse(range)
-  }
   if (range && typeof range === 'object') {
     return val > range.min && val <= range.max
   }
