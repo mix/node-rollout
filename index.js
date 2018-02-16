@@ -101,7 +101,7 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
             resultValue = resultPromise.value()
             // Treat resolved conditions with truthy values as affirmative
             if (resultValue) {
-              return resultPromise.handlerModifier
+              return deferreds[i].handlerModifier
             }
           }
         }
