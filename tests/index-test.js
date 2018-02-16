@@ -354,6 +354,9 @@ describe('rollout', function () {
     it('is optimistic', function () {
       subject.val_to_percent.returns(49)
       return subject.handler('super_secret', {
+        none: {
+          percentage: 0
+        },
         id: {
           // give feature to 49% of users
           percentage: 50
