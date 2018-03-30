@@ -83,8 +83,7 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
         }
         try {
           output = modifiers[modName].condition(opt_values[modName])
-        }
-        catch (err) {
+        } catch (err) {
           console.warn('rollout key[' + key + '] mod[' + modName + '] condition threw:', err)
           continue
         }
