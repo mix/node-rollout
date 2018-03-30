@@ -81,7 +81,13 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
         if (!modifiers[modName].condition) {
           modifiers[modName].condition = defaultCondition
         }
-        output = modifiers[modName].condition(opt_values[modName])
+        try {
+          output = modifiers[modName].condition(opt_values[modName])
+        }
+        catch (err) {
+          console.warn('rollout key[' + key + '] mod[' + modName + '] condition threw:', err)
+          continue
+        }
         if (output) {
           if (typeof output.then === 'function') {
             // Normalize thenable to Bluebird Promise
