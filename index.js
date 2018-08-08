@@ -1,24 +1,32 @@
 var crypto = require('crypto')
 var Promise = require('bluebird')
 
-module.exports = function (client) {
-  return new Rollout(client)
+module.exports = function (client, options) {
+  return new Rollout(client, options)
 }
 
-function Rollout(client) {
-  this.client = client
+function Rollout(client, options) {
+  if (client && client.clientFactory) {
+    this.clientFactory = client.clientFactory
+  } else {
+    this.clientFactory = function () {
+      return client
+    }
+  }
+  if (options && options.prefix) {
+    this.prefix = options.prefix
+  }
   this._handlers = {}
 }
 
 Rollout.prototype.handler = function (key, modifiers) {
-  var self = this
   this._handlers[key] = modifiers
   var configPercentages = []
   var configKeys = Object.keys(modifiers).map(function (modName) {
     configPercentages.push(modifiers[modName].percentage)
-    return key + ':' + modName
-  })
-  return getRedisKeys(this.client, configKeys)
+    return this.generate_key(key, modName)
+  }.bind(this))
+  return getRedisKeys(this.clientFactory(), configKeys)
   .then(function(persistentPercentages) {
     var persistKeys = []
     persistentPercentages.forEach(function (p, i) {
@@ -29,17 +37,17 @@ Rollout.prototype.handler = function (key, modifiers) {
       }
     })
     if (persistKeys.length) {
-      return setRedisKeys(self.client, persistKeys)
+      return setRedisKeys(this.clientFactory(), persistKeys)
       .then(function() {
         return persistentPercentages
       })
     }
     return persistentPercentages
-  })
+  }.bind(this))
 }
 
 Rollout.prototype.multi = function (keys) {
-  var multi = this.client.multi()
+  var multi = this.clientFactory().multi()
   // Accumulate get calls into a single "multi" query
   var promises = keys.map(function (k) {
     return this.get(k[0], k[1], k[2], multi).reflect()
@@ -57,11 +65,9 @@ Rollout.prototype.get = function (key, id, opt_values, multi) {
   opt_values = opt_values || { id: id }
   opt_values.id = opt_values.id || id
   var modifiers = this._handlers[key]
+  var keys = Object.keys(modifiers).map(this.generate_key.bind(this, key))
   var likely = this.val_to_percent(key + id)
-  var keys = Object.keys(modifiers).map(function (modName) {
-    return key + ':' + modName
-  })
-  return getRedisKeys(multi || this.client, keys)
+  return getRedisKeys(multi || this.clientFactory(), keys)
   .then(function (percentages) {
     var i = 0
     var deferreds = []
@@ -128,9 +134,9 @@ Rollout.prototype.update = function (key, modifierPercentages) {
   var percentage
   for (modName in modifierPercentages) {
     percentage = normalizePercentageRange(modifierPercentages[modName])
-    persistKeys.push(key + ':' + modName, JSON.stringify(percentage))
+    persistKeys.push(this.generate_key(key, modName), JSON.stringify(percentage))
   }
-  return setRedisKeys(this.client, persistKeys)
+  return setRedisKeys(this.clientFactory(), persistKeys)
 }
 
 Rollout.prototype.modifiers = function (handlerName) {
@@ -139,10 +145,10 @@ Rollout.prototype.modifiers = function (handlerName) {
   var modNames = []
   var modName
   for (modName in modifiers) {
-    keys.push(handlerName + ':' + modName)
+    keys.push(this.generate_key(handlerName, modName))
     modNames.push(modName)
   }
-  return getRedisKeys(this.client, keys)
+  return getRedisKeys(this.clientFactory(), keys)
   .then(function (percentages) {
     var modPercentages = {}
     var i = 0
@@ -171,6 +177,10 @@ Rollout.prototype.val_to_percent = function (text) {
   var n = crypto.createHash('md5').update(text).digest('hex')
   n = n.slice(0, n.length/2)
   return parseInt(n, 16) / parseInt(n.split('').map(function () { return 'f' }).join(''), 16) * 100
+}
+
+Rollout.prototype.generate_key = function (key, modName) {
+  return (this.prefix ? this.prefix + ':' : '') + key + ':' + modName
 }
 
 function defaultCondition() {
