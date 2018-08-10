@@ -9,6 +9,8 @@ var chai = require('chai')
 chai.use(promised)
 chai.use(require('sinon-chai'))
 
+Promise.promisifyAll(redis)
+
 function isCompanyEmail(val) {
   return /@company\.com$/.test(val)
 }
@@ -373,6 +375,56 @@ describe('rollout', function () {
         })
         // is rejected by company email, but falls within allowed regular users
         return expect(result).to.eventually.equal('id')
+      })
+    })
+  })
+
+  context('with a prefix option', function () {
+    beforeEach(function () {
+      subject = rollout(redis, { prefix: 'TEST_PREFIX' })
+    })
+
+    it('fulfills', function () {
+      return subject.handler('secret_feature', {
+        employee: {
+          percentage: 100,
+          condition: isCompanyEmail
+        }
+      })
+      .then(function () {
+        return redis.keysAsync('TEST_PREFIX:*')
+      })
+      .then(function (keys) {
+        expect(keys).to.have.length(1)
+        var result = subject.get('secret_feature', 123, {
+          employee: 'me@company.com'
+        })
+        return expect(result).to.be.fulfilled
+      })
+    })
+  })
+
+  context('with a client factory', function () {
+    beforeEach(function () {
+      subject = rollout({
+        clientFactory: function () {
+          return redis
+        }
+      })
+    })
+
+    it('fulfills', function () {
+      return subject.handler('secret_feature', {
+        employee: {
+          percentage: 100,
+          condition: isCompanyEmail
+        }
+      })
+      .then(function () {
+        var result = subject.get('secret_feature', 123, {
+          employee: 'me@company.com'
+        })
+        return expect(result).to.be.fulfilled
       })
     })
   })
