@@ -115,6 +115,42 @@ function homepage(req, res, next) {
 
 ```
 
+#### Advanced Configuration
+
+#### `clientFactory`
+For clients that require a client factory or function that returns connections, the `clientFactory` can be given a
+function that returns a client.
+This can be useful when using `ioredis` with Cluster support.
+
+*Note*: Functions like `multi()` may not work as expected with `ioredis` clusters.
+
+``` js
+// client_factory_configuration.js
+var Redis = require('ioredis')
+var rollout = require('node-rollout')({
+  clientFactory: function () {
+     return new Redis.Cluster([{
+       port: 6380,
+       host: '127.0.0.1'
+     }, {
+       port: 6381,
+       host: '127.0.0.1'
+     }]);
+  }
+})
+```
+
+#### Prefix option
+An optional prefix can be passed to the constructor that prepends all keys used by the rollout library.
+
+``` js
+var client = require('redis').createClient()
+var rollout = require('node-rollout')(client, {
+  prefix: 'my_rollouts'
+})
+
+```
+
 ### API Options
 
 #### `rollout.get(key, uid, opt_values)`
