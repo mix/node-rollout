@@ -381,7 +381,7 @@ describe('rollout', function () {
 
   context('with a prefix option', function () {
     beforeEach(function () {
-      subject = rollout(redis, { prefix: 'TEST_PREFIX' })
+      subject = rollout(redis, {prefix: 'TEST_PREFIX'})
     })
 
     it('fulfills', function () {
@@ -400,6 +400,61 @@ describe('rollout', function () {
           employee: 'me@company.com'
         })
         return expect(result).to.be.fulfilled
+      })
+    })
+
+    it('fulfills after updates', function () {
+      return subject.handler('secret_feature', { id: { percentage: 0 } })
+      .then(function () {
+        return redis.keysAsync('TEST_PREFIX:*')
+      })
+      .then(function (keys) {
+        expect(keys).to.have.length(1)
+        var result = subject.get('secret_feature', 123)
+        return expect(result).to.be.rejected
+      })
+      .then(function () {
+        return subject.update('secret_feature', { id: 100 })
+      })
+      .then(function () {
+        var result = subject.get('secret_feature', 123)
+        return expect(result).to.be.fulfilled
+      })
+    })
+
+    context('experiments', function () {
+      beforeEach(function () {
+        sinon.stub(subject, 'val_to_percent')
+      })
+
+      afterEach(function () {
+        subject.val_to_percent.restore()
+      })
+
+      it('should be able to update a key with a range', function () {
+        subject.val_to_percent.returns(50)
+        return subject.handler('experiment', {
+          groupA: {
+            percentage: 100
+          },
+          groupB: {
+            percentage: 0
+          }
+        })
+        .then(function() {
+          var result = subject.get('experiment', 123)
+          return expect(result).to.eventually.equal('groupA')
+        })
+        .then(function () {
+          return subject.update('experiment', {
+            groupA: { min: 0, max: 49 },
+            groupB: { min: 49, max: 100 }
+          })
+          .then(function () {
+            var result = subject.get('experiment', 123)
+            return expect(result).to.eventually.equal('groupB')
+          })
+        })
       })
     })
   })
