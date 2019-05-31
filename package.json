@@ -1,31 +1,42 @@
 {
   "name": "node-rollout",
-  "version": "1.1.0",
+  "version": "1.0.1",
   "description": "feature rollout management",
-  "author": "Ali Faiz & Dustin Diaz",
+  "contributors": [
+    "Ali Faiz <ali@mix.com>",
+    "Christopher Bonhage <chris@mix.com>"
+  ],
   "license": "MIT",
   "main": "index.js",
   "scripts": {
-    "test": "make test"
+    "check-types": "tsc",
+    "eslint": "eslint .",
+    "hash-dist": "./hash-dist/run.sh",
+    "lint": "npm run eslint && npm run check-types",
+    "test": "mocha index.test.js",
+    "prepublish": "npm run lint && npm run test"
   },
   "keywords": [
     "rollout",
+    "experiments",
     "features"
   ],
-  "dependencies": {
-    "bluebird": "^3.5.1"
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/mix/node-rollout.git"
   },
+  "dependencies": {
+    "lodash": "^4.17.11"
+  },
   "devDependencies": {
-    "redis": "~2.8.0",
-    "mocha": "~5.2.0",
-    "chai": "~4.2.0",
-    "sinon": "~7.1.1",
-    "sinon-chai": "~3.3.0",
-    "chai-as-promised": "~7.1.1",
-    "jshint": "~2.9.5"
+    "@types/lodash": "^4.14.132",
+    "@types/node": "^12.0.4",
+    "chai": "^4.1.2",
+    "chai-as-promised": "^7.1.1",
+    "eslint": "^5.16.0",
+    "mocha": "^5.0.5",
+    "sinon": "^4.3.0",
+    "sinon-chai": "^2.14.0",
+    "typescript": "^3.5.1"
   }
 }

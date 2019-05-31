@@ -2,8 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/node:8.9.1-stretch
-      - image: redis:3.2
+      - image: circleci/node:10.15.0-stretch
     steps:
       - checkout
       - run:
