@@ -1,230 +1,456 @@
-var crypto = require('crypto')
-var Promise = require('bluebird')
+// Node imports
+const crypto = require('crypto')
+// Vendor imports
+const _ = require('lodash')
 
-module.exports = function (client, options) {
-  return new Rollout(client, options)
-}
+// Type definitions
+/**
+ * @typedef {Object} RedisClient
+ * @property {(key: string, fields: string[]) => Promise<number>} hdel
+ * @property {(key: string, field: string) => Promise<string>} hget
+ * @property {(key: string) => Promise<Object<string, string>>} hgetall
+ * @property {(key: string) => Promise<string[]>} hkeys
+ * @property {(key: string, field: string, value: string) => Promise<0|1>} hset
+ * @property {(keys: string[]) => Promise<string[]>} mget
+ * This assumes that you are using the `ioredis` library
+ * @see https://github.com/luin/ioredis
+ */
+/**
+ * @typedef {() => RedisClient} RedisClientFactory
+ */
+/**
+ * @typedef {Object} PercentageRange
+ * @property {number} min
+ * @property {number} max
+ */
+/**
+ * @typedef {number|PercentageRange} Percentage
+ */
+/**
+ * @typedef {(credentials: Object) => Promise<boolean>} Condition
+ */
+/**
+ * @typedef {Object} ModifierOptions
+ * @property {Condition} [condition]
+ * @property {Percentage} percentage
+ */
+/**
+ * @typedef {Object<string, Percentage>} ModifierPercentages
+ */
+/**
+ * @typedef {Object<string, ModifierOptions>} ModifiersConfig
+ */
+/**
+ * @typedef {Object<string, ModifiersConfig>} HandlersConfig
+ */
 
-function Rollout(client, options) {
-  if (client && client.clientFactory) {
-    this.clientFactory = client.clientFactory
-  } else {
-    this.clientFactory = function () {
-      return client
+class Rollouts {
+  /**
+   * @constructor
+   * @param {Object} [options]
+   * @param {RedisClient} [options.redisClient]
+   * @param {RedisClientFactory} [options.redisClientFactory]
+   * @param {string} [options.redisHashKey]
+   * @param {string} [options.redisLegacyKeyPrefix]
+   */
+  constructor(options = {}) {
+    /** @type {HandlersConfig} */
+    this.handlersConfig = {}
+    // Extract options
+    const { redisClient, redisClientFactory } = options
+    if (!redisClient && !redisClientFactory) {
+      throw new Error('`redisClient` or `redisClientFactory` option is required')
     }
+    /** @type {RedisClientFactory} */
+    this.getRedisClient = redisClientFactory || (() => redisClient)
+    this.redisHashKey = options.redisHashKey
+    this.redisLegacyKeyPrefix = options.redisLegacyKeyPrefix
+    // Expose helper functions on class instance for middleware/rollouts
+    this.likelihood = likelihood
+    this.isValueInPercentageRange = isValueInPercentageRange
   }
-  if (options && options.prefix) {
-    this.prefix = options.prefix
-  }
-  this._handlers = {}
-}
 
-Rollout.prototype.handler = function (key, modifiers) {
-  this._handlers[key] = modifiers
-  var configPercentages = []
-  var configKeys = Object.keys(modifiers).map(function (modName) {
-    configPercentages.push(modifiers[modName].percentage)
-    return this.generate_key(key, modName)
-  }.bind(this))
-  return getRedisKeys(this.clientFactory(), configKeys)
-  .then(function(persistentPercentages) {
-    var persistKeys = []
-    persistentPercentages.forEach(function (p, i) {
-      if (p === null) {
-        p = normalizePercentageRange(configPercentages[i])
-        persistKeys.push(configKeys[i], JSON.stringify(p))
-        persistentPercentages[i] = p
-      }
+  /**
+   * @returns {Array<string>}
+   * @public
+   */
+  getHandlerNames() {
+    return Object.keys(this.handlersConfig)
+  }
+
+  /**
+   * @param {string} handlerName
+   * @returns {Array<string>}
+   * @public
+   */
+  getModifierNames(handlerName) {
+    return Object.keys(this.handlersConfig[handlerName])
+  }
+
+  /**
+   * @param {string} handlerName
+   * @returns {boolean}
+   * @public
+   */
+  isRegisteredHandler(handlerName) {
+    return handlerName in this.handlersConfig
+  }
+
+  /**
+   * @param {string} handlerName
+   * @param {string} modifierName
+   * @returns {boolean}
+   * @public
+   */
+  isRegisteredModifier(handlerName, modifierName) {
+    return (
+      this.isRegisteredHandler(handlerName) &&
+      this.getModifierNames(handlerName).includes(modifierName)
+    )
+  }
+
+  /**
+   * @param {string} handlerName
+   * @param {ModifiersConfig} modifiersConfig
+   * @param {Object} [options]
+   * @param {boolean} [options.resetCache]
+   * @returns {Promise<void>}
+   * @public
+   */
+  async registerHandler(handlerName, modifiersConfig, options = {}) {
+    // Validate registration to prevent problematic names
+    this.validateName(handlerName)
+    this.validateModifiersConfig(modifiersConfig)
+    // Assign the configuration if it passes validation
+    this.handlersConfig[handlerName] = modifiersConfig
+
+    const redisClient = this.getRedisClient()
+    const modifierNames = Object.keys(modifiersConfig)
+
+    /** @type {string} */
+    let cachedValue
+    /** @type {ModifierPercentages} */
+    let cachedPercentages
+    if (!options.resetCache) {
+      cachedValue = await redisClient.hget(this.redisHashKey, handlerName)
+      cachedPercentages = cachedValue
+      ? JSON.parse(cachedValue)
+      : await this.lookupLegacyModifierPercentages(handlerName)
+    }
+
+    const persistValue = JSON.stringify({
+      ...modifiersConfigToPercentages(modifiersConfig),
+      ..._.pick(cachedPercentages, modifierNames)
     })
-    if (persistKeys.length) {
-      return setRedisKeys(this.clientFactory(), persistKeys)
-      .then(function() {
-        return persistentPercentages
-      })
+    if (persistValue !== cachedValue) {
+      await redisClient.hset(this.redisHashKey, handlerName, persistValue)
     }
-    return persistentPercentages
-  }.bind(this))
-}
-
-Rollout.prototype.multi = function (keys) {
-  var multi = this.clientFactory().multi()
-  // Accumulate get calls into a single "multi" query
-  var promises = keys.map(function (k) {
-    return this.get(k[0], k[1], k[2], multi).reflect()
-  }.bind(this))
-  // Perform the batch query
-  return new Promise(function (resolve, reject) {
-    multi.exec(promiseCallback(resolve, reject))
-  })
-  .then(function () {
-    return Promise.all(promises)
-  })
-}
-
-Rollout.prototype.get = function (key, id, opt_values, multi) {
-  opt_values = opt_values || { id: id }
-  opt_values.id = opt_values.id || id
-  var modifiers = this._handlers[key]
-  var keys = Object.keys(modifiers).map(this.generate_key.bind(this, key))
-  var likely = this.val_to_percent(key + id)
-  return getRedisKeys(multi || this.clientFactory(), keys)
-  .then(function (percentages) {
-    var i = 0
-    var deferreds = []
-    var output
-    var percentage
-    for (var modName in modifiers) {
-      percentage = percentages[i++]
-      // Redis stringifies everything, so ranges must be reified
-      if (typeof percentage === 'string') {
-        percentage = JSON.parse(percentage)
-      }
-      // in the circumstance that the key is not found, default to original value
-      if (percentage === null) {
-        percentage = normalizePercentageRange(modifiers[modName].percentage)
-      }
-      if (isPercentageInRange(likely, percentage)) {
-        if (!modifiers[modName].condition) {
-          modifiers[modName].condition = defaultCondition
-        }
-        try {
-          output = modifiers[modName].condition(opt_values[modName])
-        } catch (err) {
-          console.warn('rollout key[' + key + '] mod[' + modName + '] condition threw:', err)
-          continue
-        }
-        if (output) {
-          if (typeof output.then === 'function') {
-            // Normalize thenable to Bluebird Promise
-            // Reflect the Promise to coalesce rejections
-            output = Promise.resolve(output).reflect()
-            output.handlerModifier = modName
-            deferreds.push(output)
-          } else {
-            return modName
-          }
-        }
-      }
-    }
-    if (deferreds.length) {
-      return Promise.all(deferreds)
-      .then(function (results) {
-        var resultPromise, resultValue
-        for (var i = 0, len = results.length; i < len; i++) {
-          resultPromise = results[i]
-          // Treat rejected conditions as inapplicable modifiers
-          if (resultPromise.isFulfilled()) {
-            resultValue = resultPromise.value()
-            // Treat resolved conditions with truthy values as affirmative
-            if (resultValue) {
-              return deferreds[i].handlerModifier
-            }
-          }
-        }
-        return Promise.reject()
-      })
-    }
-    throw new Error('Not inclusive of any partition for key[' + key + '] id[' + id + ']')
-  })
-}
-
-Rollout.prototype.update = function (key, modifierPercentages) {
-  var persistKeys = []
-  var modName
-  var percentage
-  for (modName in modifierPercentages) {
-    percentage = normalizePercentageRange(modifierPercentages[modName])
-    persistKeys.push(this.generate_key(key, modName), JSON.stringify(percentage))
   }
-  return setRedisKeys(this.clientFactory(), persistKeys)
-}
 
-Rollout.prototype.modifiers = function (handlerName) {
-  var modifiers = this._handlers[handlerName]
-  var keys = []
-  var modNames = []
-  var modName
-  for (modName in modifiers) {
-    keys.push(this.generate_key(handlerName, modName))
-    modNames.push(modName)
+  /**
+    * @param {string} handlerName
+    * @returns {Promise<void>}
+    * @public
+    */
+  async deleteHandler(handlerName) {
+    const redisClient = this.getRedisClient()
+    await redisClient.hdel(this.redisHashKey, [handlerName])
+    delete this.handlersConfig[handlerName]
   }
-  return getRedisKeys(this.clientFactory(), keys)
-  .then(function (percentages) {
-    var modPercentages = {}
-    var i = 0
-    var percentage
-    for (modName in modifiers) {
-      percentage = percentages[i++]
-      // Redis stringifies everything, so ranges must be reified
-      if (typeof percentage === 'string') {
-        percentage = JSON.parse(percentage)
-      }
-      // in the circumstance that the key is not found, default to original value
-      if (percentage === null) {
-        percentage = normalizePercentageRange(modifiers[modName].percentage)
-      }
-      modPercentages[modName] = percentage
+
+  /**
+   * @param {string} handlerName
+   * @param {ModifierPercentages} modifierPercentages
+   * @returns {Promise<void>}
+   * @public
+   */
+  async updateHandler(handlerName, modifierPercentages) {
+    const updatedValue = JSON.stringify({
+      ...modifiersConfigToPercentages(await this.lookupHandler(handlerName)),
+      ...normalizeModifierPercentages(modifierPercentages)
+    })
+    await this.getRedisClient().hset(this.redisHashKey, handlerName, updatedValue)
+  }
+
+  /**
+   * Delete obsolete handlers from the redis cache
+   * @returns {Promise<void>}
+   * @public
+   */
+  async pruneObsoleteHandlersFromCache() {
+    const redisClient = this.getRedisClient()
+    const registeredHandlerNames = this.getHandlerNames()
+    const cachedHandlerNames = await redisClient.hkeys(this.redisHashKey)
+    const obsoleteHandlerNames = _.difference(cachedHandlerNames, registeredHandlerNames)
+    if (obsoleteHandlerNames.length) {
+      await redisClient.hdel(this.redisHashKey, obsoleteHandlerNames)
     }
-    return modPercentages
-  })
+  }
+
+  /**
+   * @param {number|string} userId
+   * @param {Object} credentials
+   * @returns {Promise<Object<string, string>>}
+   * @public
+   */
+  async checkAllHandlers(userId, credentials) {
+    const modifiersConfigByHandler = await this.lookupAllHandlers()
+    const handlerNames = Object.keys(modifiersConfigByHandler)
+    const promises = _.map(modifiersConfigByHandler, (modifiersConfig, handlerName) => {
+      return this.checkHandlerModifiers(handlerName, modifiersConfig, userId, credentials)
+    })
+    return _.zipObject(handlerNames, await Promise.all(promises))
+  }
+
+  /**
+   * @param {string} handlerName
+   * @param {number|string} userId
+   * @param {Object} credentials
+   * @returns {Promise<string>}
+   * @public
+   */
+  async checkHandler(handlerName, userId, credentials) {
+    const modifiersConfig = await this.lookupHandler(handlerName)
+    return this.checkHandlerModifiers(handlerName, modifiersConfig, userId, credentials)
+  }
+
+  /**
+   * @returns {Promise<HandlersConfig>}
+   * @private
+   */
+  async lookupAllHandlers() {
+    const redisClient = this.getRedisClient()
+    const hashObj = await redisClient.hgetall(this.redisHashKey)
+    /** @type {HandlersConfig} */
+    const handlersConfig = {}
+    // Sort the handlers alphabetically for consistency
+    for (let handlerName of this.getHandlerNames().sort()) {
+      if (hashObj[handlerName]) {
+        const modifierPercentages = JSON.parse(hashObj[handlerName])
+        const modifiersConfig = this.modifierPercentagesToConfig(handlerName, modifierPercentages)
+        handlersConfig[handlerName] = modifiersConfig
+      } else {
+        // Fall back to the configuration if the cache entry is missing
+        handlersConfig[handlerName] = this.handlersConfig[handlerName]
+      }
+    }
+    return handlersConfig
+  }
+
+  /**
+   * @param {string} handlerName
+   * @returns {Promise<ModifiersConfig>}
+   * @private
+   */
+  async lookupHandler(handlerName) {
+    const redisClient = this.getRedisClient()
+    const cachedValue = await redisClient.hget(this.redisHashKey, handlerName)
+    if (cachedValue) {
+      return this.modifierPercentagesToConfig(handlerName, JSON.parse(cachedValue))
+    }
+    if (this.handlersConfig[handlerName]) {
+      // Fall back to the configuration if the cache entry is missing
+      return this.handlersConfig[handlerName]
+    }
+    throw new Error(`Rollouts handler not found: ${handlerName}`)
+  }
+
+  /**
+   * @param {string} handlerName
+   * @param {ModifiersConfig} modifiers
+   * @param {number|string} userId
+   * @param {Object} credentials
+   * @returns {Promise<string>} First-applicable modifier for handler (or `undefined`)
+   * @private
+   */
+  async checkHandlerModifiers(handlerName, modifiers, userId, credentials) {
+    const likely = this.likelihood(handlerName + userId)
+    /** @type {Array<boolean|Promise<boolean>>} */
+    const deferredConditions = _.map(modifiers, modifierOptions => {
+      if (isValueInPercentageRange(likely, modifierOptions.percentage)) {
+        const modifierCondition = modifierOptions.condition || defaultCondition
+        return modifierCondition(credentials)
+      }
+      return false
+    })
+
+    const modifierNames = Object.keys(modifiers)
+    const resolvedConditions = await Promise.all(deferredConditions)
+    for (let [ index, result ] of resolvedConditions.entries()) {
+      if (result) {
+        return modifierNames[index]
+      }
+    }
+  }
+
+  /**
+   * @param {string} handlerName
+   * @param {ModifierPercentages} modifierPercentages
+   * @returns {ModifiersConfig}
+   * @private
+   */
+  modifierPercentagesToConfig(handlerName, modifierPercentages) {
+    const modifiersConfig = this.handlersConfig[handlerName]
+    return mergeModifiersConfigWithPercentages(modifiersConfig, modifierPercentages)
+  }
+
+  /**
+   * Throws an Error if the name is not valid
+   * @param {string} name
+   * @returns {void}
+   * @throws If the name is not valid
+   * @private
+   */
+  validateName(name) {
+    if (!name || !_.isString(name)) {
+      throw new Error('Name must be a non-empty string')
+    }
+    // Prevent characters that would break cookie parsing
+    if (/[=;,]/.test(name)) {
+      throw new Error('Name cannot include the following characters: = ; ,')
+    }
+  }
+
+  /**
+   * Throws an Error if the name is not valid
+   * @param {ModifiersConfig} modifiersConfig
+   * @returns {void}
+   * @throws If `modifiersConfig` is not valid
+   * @private
+   */
+  validateModifiersConfig(modifiersConfig) {
+    if (!_.isPlainObject(modifiersConfig)) {
+      throw new Error('Modifiers configuration must be a plain JavaScript Object')
+    }
+    if (_.isEmpty(modifiersConfig)) {
+      throw new Error('Modifiers configuration must contain at least one modifier')
+    }
+    Object.keys(modifiersConfig).forEach(this.validateName)
+  }
+
+  /**
+   * @param {string} handlerName
+   * @returns {Promise<ModifierPercentages>}
+   * @private
+   */
+  async lookupLegacyModifierPercentages(handlerName) {
+    const redisClient = this.getRedisClient()
+    const modifierNames = this.getModifierNames(handlerName)
+    const configLegacyKeys = modifierNames.map(modifierName => {
+      return this.getLegacyModifierKey(handlerName, modifierName)
+    })
+    const values = await redisClient.mget(configLegacyKeys)
+    /** @type {ModifierPercentages} */
+    const modifierPercentages = {}
+    for (let [ index, value ] of values.entries()) {
+      if (value) {
+        const modifierName = modifierNames[index]
+        modifierPercentages[modifierName] = JSON.parse(value)
+      }
+    }
+    return modifierPercentages
+  }
+
+  /**
+   * This is used for backwards-compatibility with existing (pre-2.0) configs
+   * @param {string} handlerName
+   * @param {string} modifierName
+   * @returns {string}
+   * @private
+   */
+  getLegacyModifierKey(handlerName, modifierName) {
+    const prefix = this.redisLegacyKeyPrefix ? `${this.redisLegacyKeyPrefix}:` : ''
+    return prefix + `${handlerName}:${modifierName}`
+  }
 }
 
-Rollout.prototype.handlers = function () {
-  return Promise.resolve(Object.keys(this._handlers))
-}
+module.exports = Rollouts
 
-Rollout.prototype.val_to_percent = function (text) {
-  var n = crypto.createHash('md5').update(text).digest('hex')
-  n = n.slice(0, n.length/2)
-  return parseInt(n, 16) / parseInt(n.split('').map(function () { return 'f' }).join(''), 16) * 100
-}
+// Internal helper functions
 
-Rollout.prototype.generate_key = function (key, modName) {
-  return (this.prefix ? this.prefix + ':' : '') + key + ':' + modName
-}
-
-function defaultCondition() {
+async function defaultCondition() {
   return true
 }
 
-function clampPercentage(val) {
-  return Math.max(0, Math.min(100, +(val || 0)))
+/**
+ * Convert an abitrary string into a number between 0 and 100
+ * @param {string} string
+ * @returns {number}
+ */
+function likelihood(string) {
+  const hashed = crypto.createHash('md5').update(string).digest('hex')
+  const n = hashed.slice(0, hashed.length / 2)
+  const m = n.replace(/./g, 'f')
+  return parseInt(n, 16) / parseInt(m, 16) * 100
 }
 
-function normalizePercentageRange(val) {
-  if (val && typeof val === 'object') {
+/**
+ * @param {number} value
+ * @param {Percentage} percentage
+ * @returns {boolean}
+ */
+function isValueInPercentageRange(value, percentage) {
+  if (_.isObject(percentage)) {
+    return value > percentage.min && value <= percentage.max
+  }
+  return value < percentage
+}
+
+/**
+ * Ensure that the number is a valid percentage (0-100)
+ * @param {number} percentage
+ * @returns {number}
+ */
+function clampPercentage(percentage) {
+  return Math.max(0, Math.min(100, +(percentage || 0)))
+}
+
+/**
+ * @param {Percentage} percentage
+ * @returns {Percentage}
+ */
+function normalizePercentageRange(percentage) {
+  if (_.isObject(percentage)) {
     return {
-      min: clampPercentage(val.min),
-      max: clampPercentage(val.max)
+      min: clampPercentage(percentage.min),
+      max: clampPercentage(percentage.max)
     }
   }
-  return clampPercentage(val)
+  return clampPercentage(percentage)
 }
 
-function isPercentageInRange(val, range) {
-  if (range && typeof range === 'object') {
-    return val > range.min && val <= range.max
-  }
-  return val < range
-}
-
-function getRedisKeys(client, keys) {
-  return new Promise(function (resolve, reject) {
-    client.mget(keys, promiseCallback(resolve, reject))
+/**
+ * @param {ModifierPercentages} modifierPercentages
+ * @returns {ModifierPercentages}
+ */
+function normalizeModifierPercentages(modifierPercentages) {
+  return _.transform(modifierPercentages, (acc, percentage, modifierName) => {
+    acc[modifierName] = normalizePercentageRange(percentage)
   })
 }
 
-function setRedisKeys(client, keys) {
-  return new Promise(function (resolve, reject) {
-    client.mset(keys, promiseCallback(resolve, reject))
+/**
+ * @param {ModifiersConfig} modifiersConfig
+ * @returns {ModifierPercentages}
+ */
+function modifiersConfigToPercentages(modifiersConfig) {
+  return _.transform(modifiersConfig, (acc, modifierOptions, modifierName) => {
+    acc[modifierName] = normalizePercentageRange(modifierOptions.percentage)
   })
 }
 
-function promiseCallback(resolve, reject) {
-  return function (err, result) {
-    if (err) {
-      return reject(err)
+/**
+ * @param {ModifiersConfig} modifiersConfig
+ * @param {ModifierPercentages} modifierPercentages
+ * @returns {ModifiersConfig}
+ */
+function mergeModifiersConfigWithPercentages(modifiersConfig, modifierPercentages) {
+  return _.transform(modifiersConfig, (acc, modifierOptions, modifierName) => {
+    if (modifierName in modifierPercentages) {
+      const percentage = modifierPercentages[modifierName]
+      acc[modifierName] = { ...modifierOptions, percentage }
+    } else {
+      acc[modifierName] = modifierOptions
     }
-    resolve(result)
-  }
+  })
 }

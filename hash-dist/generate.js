@@ -1,5 +1,8 @@
-var rollout = require('../index');
-var subject = rollout();
+var Rollouts = require('../index');
+
+var subject = new Rollouts({
+  redisClientFactory() { throw new Error('Redis is not needed here') }
+});
 
 function randomString(length) {
   var resultChars = [];
@@ -22,7 +25,7 @@ function randomId() {
 var n = 100000;
 var sample
 while (n) {
-  sample = subject.val_to_percent(randomId());
+  sample = subject.likelihood(randomId());
   process.stdout.write(sample + '\n');
   n--;
 }
