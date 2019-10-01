@@ -13,7 +13,7 @@
     "features"
   ],
   "dependencies": {
-    "bluebird": "^3.5.1"
+    "bluebird": "^3.7.0"
   },
   "repository": {
     "type": "git",
