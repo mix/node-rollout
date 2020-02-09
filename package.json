@@ -20,7 +20,7 @@
     "url": "https://github.com/mix/node-rollout.git"
   },
   "devDependencies": {
-    "redis": "~2.8.0",
+    "redis": "~3.0.0",
     "mocha": "~5.2.0",
     "chai": "~4.2.0",
     "sinon": "~7.1.1",
