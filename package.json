@@ -26,6 +26,6 @@
     "sinon": "~7.1.1",
     "sinon-chai": "~3.3.0",
     "chai-as-promised": "~7.1.1",
-    "jshint": "~2.9.5"
+    "jshint": "~2.11.1"
   }
 }
